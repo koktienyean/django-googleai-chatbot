@@ -5,8 +5,6 @@ from django.utils.safestring import mark_safe
 md = markdown.Markdown(extensions=["fenced_code", "tables"])
 
 # Create your models here.
-
-
 class Chat(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     message = models.TextField()
@@ -18,3 +16,4 @@ class Chat(models.Model):
     
     def response_md(self):
         return mark_safe(md.convert(self.response))
+    

@@ -61,6 +61,16 @@ def chatbot(request):
         return JsonResponse({'message': message, 'response': chat.response_md()})
     return render(request, 'chatbot.html', {'chats': chats})
 
+def generate_model(request):
+    if request.method == 'POST':
+        model_name = request.POST.get('model_name')
+        try:
+            model = genai.GenerativeModel(model_name)
+            return JsonResponse({'status': 'success', 'message': f'Model {model_name} generated successfully.'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+    return render(request, 'generate_model.html')
+
 
 def login(request):
     if request.method=='POST':
