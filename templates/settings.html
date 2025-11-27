@@ -1,0 +1,554 @@
+{% extends 'base.html' %}
+
+{% block title %}Settings - Gemini Chatbot{% endblock %}
+
+{% block styles %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Outfit:wght@300;400;500;600&display=swap');
+
+  /* ========== CSS Variables ========== */
+  :root {
+    --color-primary: #00d9ff;
+    --color-primary-dark: #00a8cc;
+    --color-secondary: #ff006e;
+    --color-accent: #06d6a0;
+
+    --bg-primary: #0f1419;
+    --bg-secondary: #1a1f2e;
+    --bg-tertiary: #2d3748;
+
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-muted: #707070;
+    --text-inverse: #0f1419;
+
+    --border-primary: rgba(0, 217, 255, 0.2);
+    --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
+
+    --transition-smooth: 0.3s ease;
+    --font-display: 'Playfair Display', serif;
+    --font-body: 'Outfit', sans-serif;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body, html {
+    height: 100%;
+    font-family: var(--font-body);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, #0a0e1a 100%);
+    color: var(--text-primary);
+  }
+
+  .settings-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    min-height: 100vh;
+  }
+
+  .settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+    animation: slideInDown 0.6s ease-out;
+  }
+
+  @keyframes slideInDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .settings-header h1 {
+    margin: 0;
+    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 32px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .back-btn {
+    padding: 11px 20px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+    color: var(--text-inverse);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all var(--transition-smooth);
+    box-shadow: 0 8px 24px rgba(0, 217, 255, 0.3);
+  }
+
+  .back-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(0, 217, 255, 0.4);
+  }
+
+  .back-btn:active {
+    transform: translateY(0);
+  }
+
+  .settings-section {
+    background: rgba(26, 31, 42, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-md);
+    animation: fadeInUp 0.6s ease-out;
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .settings-section:nth-child(1) { animation-delay: 0.1s; }
+  .settings-section:nth-child(2) { animation-delay: 0.2s; }
+
+  .settings-section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    border-bottom: 2px solid var(--border-primary);
+    padding-bottom: 12px;
+    color: var(--text-primary);
+  }
+
+  .form-group {
+    margin-bottom: 24px;
+  }
+
+  .form-group label {
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: block;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+
+  .form-group small {
+    color: var(--text-muted);
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .model-select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    font-size: 14px;
+    background: rgba(45, 55, 72, 0.6);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    transition: all var(--transition-smooth);
+  }
+
+  .model-select option {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .model-select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    background: rgba(45, 55, 72, 0.8);
+    box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.1);
+  }
+
+  .button-group {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-smooth);
+    font-family: var(--font-body);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+    color: var(--text-inverse);
+    box-shadow: 0 8px 24px rgba(0, 217, 255, 0.3);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(0, 217, 255, 0.4);
+  }
+
+  .btn-secondary {
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--color-primary);
+    border: 1px solid var(--border-primary);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(0, 217, 255, 0.15);
+    border-color: var(--color-primary);
+  }
+
+  .btn:active {
+    transform: translateY(0);
+  }
+
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .status-message {
+    padding: 14px 16px;
+    border-radius: 8px;
+    margin-top: 16px;
+    display: none;
+    border-left: 3px solid;
+    font-size: 13px;
+    animation: slideInDown 0.4s ease-out;
+  }
+
+  .status-message.success {
+    background: rgba(6, 214, 160, 0.1);
+    color: var(--color-accent);
+    border-left-color: var(--color-accent);
+    display: block;
+  }
+
+  .status-message.error {
+    background: rgba(255, 0, 110, 0.1);
+    color: var(--color-secondary);
+    border-left-color: var(--color-secondary);
+    display: block;
+  }
+
+  .status-message.loading {
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--color-primary);
+    border-left-color: var(--color-primary);
+    display: block;
+  }
+
+  .model-info {
+    background: rgba(0, 217, 255, 0.08);
+    border-left: 3px solid var(--color-primary);
+    padding: 14px 16px;
+    margin-top: 16px;
+    border-radius: 6px;
+    display: none;
+  }
+
+  .model-info.show {
+    display: block;
+  }
+
+  .model-info strong {
+    color: var(--color-primary);
+  }
+
+  .model-info p {
+    margin: 8px 0 0 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0, 217, 255, 0.2);
+    border-top: 2px solid var(--color-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .model-list-loading {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+  }
+
+  .model-option {
+    padding: 8px 12px;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 217, 255, 0.2);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 217, 255, 0.4);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 217, 255, 0.2) transparent;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .settings-container {
+      padding: 20px 16px;
+    }
+
+    .settings-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .settings-header h1 {
+      font-size: 24px;
+    }
+
+    .settings-section {
+      padding: 20px;
+    }
+
+    .button-group {
+      flex-direction: column;
+    }
+
+    .btn {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+  <div class="settings-header">
+    <h1>⚙️ Settings</h1>
+    <a href="/" class="back-btn">Back to Chat</a>
+  </div>
+
+  <div class="settings-section">
+    <h2>AI Model Selection</h2>
+
+    <div class="form-group">
+      <label for="model-select">Choose Model</label>
+      <select id="model-select" class="model-select">
+        <option value="">Loading available models...</option>
+      </select>
+      <small>Select which Gemini model to use for new conversations</small>
+    </div>
+
+    <div class="model-info" id="model-info">
+      <strong>Model Info:</strong>
+      <p id="model-description" style="margin: 8px 0; font-size: 13px;"></p>
+    </div>
+
+    <div class="button-group">
+      <button id="test-model-btn" class="btn btn-secondary">Test Model</button>
+      <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+    </div>
+
+    <div id="status-message" class="status-message"></div>
+  </div>
+
+  <div class="settings-section">
+    <h2>About</h2>
+    <p style="margin: 0; color: #6c757d; font-size: 14px;">
+      Gemini Chatbot v1.0<br>
+      Powered by Google's Generative AI API<br>
+      <br>
+      <strong>Current User:</strong> {{ user.username }}
+    </p>
+  </div>
+</div>
+
+<script>
+  const modelSelect = document.getElementById('model-select');
+  const testBtn = document.getElementById('test-model-btn');
+  const saveBtn = document.getElementById('save-settings-btn');
+  const statusMsg = document.getElementById('status-message');
+  const modelInfo = document.getElementById('model-info');
+
+  // Fetch and populate models on page load
+  async function loadModels() {
+    try {
+      const response = await fetch('/api/models/');
+      const data = await response.json();
+
+      if (data.error) {
+        showStatus('Error loading models: ' + data.error, 'error');
+        return;
+      }
+
+      modelSelect.innerHTML = '';
+      data.models.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.name;
+        option.textContent = model.display;
+        modelSelect.appendChild(option);
+      });
+
+      // Set current selection if available
+      const savedModel = localStorage.getItem('selectedModel');
+      if (savedModel) {
+        modelSelect.value = savedModel;
+      }
+    } catch (error) {
+      showStatus('Error fetching models: ' + error.message, 'error');
+    }
+  }
+
+  // Test model connection
+  testBtn.addEventListener('click', async () => {
+    const model = modelSelect.value;
+    if (!model) {
+      showStatus('Please select a model first', 'error');
+      return;
+    }
+
+    testBtn.disabled = true;
+    testBtn.innerHTML = '<span class="loading-spinner"></span>Testing...';
+
+    try {
+      const response = await fetch('/api/settings/save/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          'model': model,
+          'csrfmiddlewaretoken': getCookie('csrftoken')
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        showStatus('✓ Model connection successful!', 'success');
+      } else {
+        showStatus('Error: ' + (data.message || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      showStatus('Error testing model: ' + error.message, 'error');
+    } finally {
+      testBtn.disabled = false;
+      testBtn.innerHTML = 'Test Model';
+    }
+  });
+
+  // Save settings
+  saveBtn.addEventListener('click', async () => {
+    const model = modelSelect.value;
+    if (!model) {
+      showStatus('Please select a model first', 'error');
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="loading-spinner"></span>Saving...';
+
+    try {
+      const response = await fetch('/api/settings/save/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          'model': model,
+          'csrfmiddlewaretoken': getCookie('csrftoken')
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        localStorage.setItem('selectedModel', model);
+        showStatus('✓ Settings saved successfully!', 'success');
+
+        // Redirect after 1.5 seconds
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1500);
+      } else {
+        showStatus('Error: ' + (data.message || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      showStatus('Error saving settings: ' + error.message, 'error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = 'Save Settings';
+    }
+  });
+
+  function showStatus(message, type) {
+    statusMsg.textContent = message;
+    statusMsg.className = 'status-message ' + type;
+  }
+
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+
+  // Load models when page loads
+  document.addEventListener('DOMContentLoaded', loadModels);
+</script>
+{% endblock %}

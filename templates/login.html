@@ -1,93 +1,320 @@
 {% extends 'base.html' %}
 
-{% block title %}Login{% endblock %}
+{% block title %}Welcome Back - Gemini Chat{% endblock %}
 
 {% block styles %}
 <style>
-  body {
-    background-color: #f0f0f0;
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Outfit:wght@300;400;500;600&display=swap');
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
   }
+
+  html, body {
+    height: 100%;
+  }
+
+  body {
+    background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 50%, #0a0e1a 100%);
+    font-family: 'Outfit', sans-serif;
+    color: #e0e0e0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Animated background pattern */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background:
+      radial-gradient(circle at 20% 50%, rgba(0, 217, 255, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(255, 0, 110, 0.05) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
   .login-container {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
+    padding: 20px;
+    position: relative;
+    z-index: 1;
   }
-  .card {
-    max-width: 400px;
+
+  .auth-wrapper {
+    width: 100%;
+    max-width: 420px;
+    animation: fadeInUp 0.8s ease-out;
   }
-  .card-header {
-    background-color: #007bff;
-    color: white;
-    font-size: 24px;
-    font-weight: bold;
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .auth-card {
+    background: rgba(26, 31, 42, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 217, 255, 0.15);
+    border-radius: 16px;
+    padding: 48px 40px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .auth-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #00d9ff, transparent);
+  }
+
+  .auth-header {
+    margin-bottom: 40px;
     text-align: center;
+    animation: slideInDown 0.6s ease-out;
   }
-  .card-body {
-    padding: 30px;
+
+  @keyframes slideInDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
+
+  .auth-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #00d9ff 0%, #ff006e 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+  }
+
+  .auth-subtitle {
+    font-size: 14px;
+    color: #a0a0a0;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
   .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
+    animation: fadeIn 0.6s ease-out;
   }
+
+  .form-group:nth-child(1) { animation-delay: 0.1s; }
+  .form-group:nth-child(2) { animation-delay: 0.2s; }
+  .form-group:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
   label {
-    font-weight: bold;
     display: block;
-    margin-bottom: 5px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 8px;
+    color: #b0b0b0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
-  input[type=text], input[type=password] {
-    border-radius: 4px;
-    border: 1px solid #ccc;
-    padding: 10px;
-    font-size: 16px;
+
+  input[type=text],
+  input[type=password],
+  input[type=email] {
     width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(0, 217, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e0e0e0;
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    transition: all 0.3s ease;
     box-sizing: border-box;
-    margin-bottom: 10px;
   }
+
+  input[type=text]:focus,
+  input[type=password]:focus,
+  input[type=email]:focus {
+    outline: none;
+    border-color: #00d9ff;
+    background: rgba(0, 217, 255, 0.08);
+    box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.1);
+  }
+
+  input::placeholder {
+    color: #707070;
+  }
+
   button[type=submit] {
-    background-color: #007bff;
-    color: white;
-    font-size: 16px;
-    font-weight: bold;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
     width: 100%;
+    padding: 13px 24px;
+    margin-top: 16px;
+    background: linear-gradient(135deg, #00d9ff 0%, #00a8cc 100%);
+    color: #0f1419;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 8px 24px rgba(0, 217, 255, 0.3);
+    animation: slideInUp 0.6s ease-out 0.4s both;
   }
+
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   button[type=submit]:hover {
-    background-color: #0062cc;
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(0, 217, 255, 0.4);
   }
+
+  button[type=submit]:active {
+    transform: translateY(0);
+  }
+
+  .alert {
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    border-radius: 8px;
+    border-left: 3px solid;
+    font-size: 13px;
+    line-height: 1.5;
+    animation: slideInDown 0.4s ease-out;
+  }
+
   .alert-danger {
-    background-color: #f8d7da;
-    color: #721c24;
-    padding: 10px;
-    margin-bottom: 20px;
-    border: 1px solid #f5c6cb;
-    border-radius: 4px;
+    background: rgba(255, 0, 110, 0.1);
+    border-color: #ff006e;
+    color: #ff6b9d;
+  }
+
+  .auth-footer {
+    text-align: center;
+    margin-top: 32px;
+    font-size: 13px;
+    color: #707070;
+    animation: fadeIn 0.6s ease-out 0.5s both;
+  }
+
+  .auth-footer a {
+    color: #00d9ff;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+  }
+
+  .auth-footer a:hover {
+    color: #00a8cc;
+    text-decoration: underline;
+  }
+
+  /* Input field validation states */
+  input:invalid:not(:placeholder-shown) {
+    border-color: #ff6b9d;
+    background: rgba(255, 0, 110, 0.08);
+  }
+
+  input:valid:not(:placeholder-shown) {
+    border-color: #06d6a0;
   }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="login-container">
-  <div class="card">
-    <div class="card-header">Login</div>
-    <div class="card-body">
+  <div class="auth-wrapper">
+    <div class="auth-card">
+      <div class="auth-header">
+        <h1 class="auth-title">Welcome Back</h1>
+        <p class="auth-subtitle">Sign in to continue</p>
+      </div>
+
       {% if error_message %}
-        <div class="alert alert-danger" role="alert">{{ error_message }}</div>
+        <div class="alert alert-danger" role="alert">
+          {{ error_message }}
+        </div>
       {% endif %}
-      <form method="post">
+
+      <form method="post" novalidate>
         {% csrf_token %}
+
         <div class="form-group">
           <label for="username">Username</label>
-          <input type="text" class="form-control" id="username" name="username" required>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="your_username"
+            required
+            autocomplete="username"
+          >
         </div>
+
         <div class="form-group">
           <label for="password">Password</label>
-          <input type="password" class="form-control" id="password" name="password" required>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="••••••••"
+            required
+            autocomplete="current-password"
+          >
         </div>
-        <button type="submit">Login</button>
+
+        <button type="submit">Sign In</button>
       </form>
+
+      <div class="auth-footer">
+        Don't have an account? <a href="{% url 'register' %}">Create one</a>
+      </div>
     </div>
   </div>
 </div>
