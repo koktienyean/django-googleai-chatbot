@@ -80,6 +80,71 @@
     box-shadow: var(--shadow-md);
   }
 
+  /* User Section */
+  .user-section {
+    padding: 16px 12px;
+    border-bottom: 1px solid var(--border-secondary);
+    background: rgba(255, 0, 110, 0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .user-avatar {
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+
+  .user-details {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .user-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .user-email {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .logout-btn {
+    text-decoration: none;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .logout-btn:hover {
+    color: var(--color-secondary);
+    background: rgba(255, 0, 110, 0.1);
+  }
+
   .sidebar-header {
     padding: 20px 16px;
     border-bottom: 1px solid var(--border-primary);
@@ -249,6 +314,13 @@
     backdrop-filter: blur(5px);
   }
 
+  .title-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+
   .session-title {
     margin: 0;
     font-size: 20px;
@@ -258,6 +330,42 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background var(--transition-fast);
+  }
+
+  .session-title:hover {
+    background: rgba(0, 217, 255, 0.1);
+  }
+
+  .title-edit-icon {
+    font-size: 16px;
+    opacity: 0.5;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+    flex-shrink: 0;
+  }
+
+  .title-edit-icon:hover {
+    opacity: 1;
+  }
+
+  .title-edit-input {
+    padding: 8px 12px;
+    border: 2px solid var(--color-primary);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 16px;
+    font-family: var(--font-body);
+    border-radius: 4px;
+    flex: 1;
+  }
+
+  .title-edit-input:focus {
+    outline: none;
+    box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
   }
 
   .model-badge {
@@ -559,6 +667,18 @@
 <div class="app-wrapper">
   <!-- Sidebar with Sessions -->
   <aside class="sidebar">
+    <!-- User Info Section -->
+    <div class="user-section">
+      <div class="user-info">
+        <span class="user-avatar">👤</span>
+        <div class="user-details">
+          <div class="user-name">{{ user.username }}</div>
+          <div class="user-email">{{ user.email }}</div>
+        </div>
+      </div>
+      <a href="/logout/" class="logout-btn" title="Logout">🚪</a>
+    </div>
+
     <div class="sidebar-header">
       <h1>💬 Chats</h1>
       <a href="/settings/" class="settings-link" title="Settings">⚙️</a>
@@ -574,7 +694,11 @@
   <!-- Main Chat Area -->
   <div class="chat-container">
     <div class="chat-header">
-      <h2 class="session-title" id="session-title">{{ session.name }}</h2>
+      <div class="title-section">
+        <h2 class="session-title" id="session-title" title="Click to edit">{{ session.name }}</h2>
+        <input type="text" id="title-edit-input" class="title-edit-input" style="display: none;" />
+        <span id="title-edit-icon" class="title-edit-icon" title="Edit title">✏️</span>
+      </div>
       <span class="model-badge" id="model-badge">{{ session.model }}</span>
     </div>
 
@@ -592,7 +716,7 @@
 
     <form class="message-form" id="message-form">
       {% csrf_token %}
-      <textarea class="message-input" id="message-input" placeholder="Type your message..." required></textarea>
+      <textarea class="message-input" id="message-input" placeholder="Type your message... (Enter to send, Shift+Enter for new line)" required></textarea>
       <button type="submit" class="btn-send" id="btn-send">Send</button>
     </form>
   </div>
@@ -611,6 +735,15 @@
   messageInput.addEventListener('input', () => {
     messageInput.style.height = 'auto';
     messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+  });
+
+  // Handle Enter to send, Shift+Enter for new line
+  messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      messageForm.dispatchEvent(new Event('submit'));
+    }
+    // Shift+Enter allows new line (default behavior)
   });
 
   // Load sessions list
@@ -653,6 +786,64 @@
     } catch (error) {
       console.error('Error creating session:', error);
     }
+  });
+
+  // Edit session title
+  const sessionTitle = document.getElementById('session-title');
+  const titleEditInput = document.getElementById('title-edit-input');
+  const titleEditIcon = document.getElementById('title-edit-icon');
+
+  function enableTitleEdit() {
+    titleEditInput.value = sessionTitle.textContent;
+    sessionTitle.style.display = 'none';
+    titleEditIcon.style.display = 'none';
+    titleEditInput.style.display = 'block';
+    titleEditInput.focus();
+    titleEditInput.select();
+  }
+
+  async function saveTitleEdit() {
+    const newTitle = titleEditInput.value.trim();
+    if (!newTitle) {
+      cancelTitleEdit();
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/update/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          'name': newTitle,
+          'csrfmiddlewaretoken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        sessionTitle.textContent = newTitle;
+        cancelTitleEdit();
+        loadSessions();
+      }
+    } catch (error) {
+      console.error('Error updating title:', error);
+      cancelTitleEdit();
+    }
+  }
+
+  function cancelTitleEdit() {
+    titleEditInput.style.display = 'none';
+    sessionTitle.style.display = 'block';
+    titleEditIcon.style.display = 'block';
+  }
+
+  // Title edit listeners
+  sessionTitle.addEventListener('click', enableTitleEdit);
+  titleEditIcon.addEventListener('click', enableTitleEdit);
+  titleEditInput.addEventListener('blur', saveTitleEdit);
+  titleEditInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveTitleEdit();
+    if (e.key === 'Escape') cancelTitleEdit();
   });
 
   // Delete session
