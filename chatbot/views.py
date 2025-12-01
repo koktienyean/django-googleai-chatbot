@@ -693,9 +693,18 @@ def api_task_update_due_date(request, task_id):
 
         # Parse ISO format date
         try:
-            new_date = timezone.make_aware(
-                datetime.fromisoformat(new_date_str.replace('Z', '+00:00'))
-            )
+            # Handle ISO format dates (with or without timezone)
+            if new_date_str.endswith('Z'):
+                new_date_str = new_date_str[:-1] + '+00:00'
+
+            # fromisoformat already returns aware datetime if tzinfo is present
+            parsed_date = datetime.fromisoformat(new_date_str)
+
+            # Make sure it's timezone-aware
+            if parsed_date.tzinfo is None:
+                new_date = timezone.make_aware(parsed_date)
+            else:
+                new_date = parsed_date
         except Exception as e:
             return JsonResponse({
                 'success': False,
