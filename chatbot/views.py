@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.core.cache import cache
@@ -612,6 +613,124 @@ def get_task_summary(user):
         return summary
     except Exception as e:
         return {'error': str(e)}
+
+
+# ============================================================================
+# PHASE 3: CALENDAR INTEGRATION ENDPOINTS
+# ============================================================================
+
+@login_required
+def api_tasks_calendar(request):
+    """Return user's tasks as calendar events (JSON format for FullCalendar)"""
+    try:
+        # Get filter parameters
+        priority_filter = request.GET.get('priority', '')
+        status_filter = request.GET.get('status', '')
+
+        # Query tasks
+        tasks = Task.objects.filter(user=request.user, due_date__isnull=False)
+
+        # Apply filters
+        if priority_filter:
+            tasks = tasks.filter(priority=priority_filter)
+        if status_filter:
+            tasks = tasks.filter(status=status_filter)
+
+        # Build calendar events
+        events = []
+        for task in tasks:
+            # FullCalendar requires events with start/end dates
+            start_date = task.due_date
+            # End date is 1 hour after start (for timed events)
+            end_date = start_date + timezone.timedelta(hours=1)
+
+            events.append({
+                'id': task.id,
+                'title': task.title,
+                'start': start_date.isoformat(),
+                'end': end_date.isoformat(),
+                'backgroundColor': task.get_priority_color(),
+                'borderColor': task.get_priority_color(),
+                'textColor': '#ffffff',
+                'extendedProps': {
+                    'taskId': task.id,
+                    'priority': task.priority,
+                    'status': task.status,
+                    'description': task.description if task.description else 'No description',
+                    'isOverdue': task.is_overdue(),
+                    'daysUntilDue': task.days_until_due(),
+                    'statusDisplay': task.get_status_display(),
+                    'priorityDisplay': task.get_priority_display(),
+                }
+            })
+
+        return JsonResponse({
+            'success': True,
+            'count': len(events),
+            'events': events
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+def api_task_update_due_date(request, task_id):
+    """Update task's due date via drag-and-drop on calendar"""
+    try:
+        task = get_object_or_404(Task, id=task_id, user=request.user)
+
+        # Get new due date from POST or GET parameter
+        new_date_str = request.POST.get('due_date') or request.GET.get('due_date')
+
+        if not new_date_str:
+            return JsonResponse({
+                'success': False,
+                'error': 'No due_date provided'
+            }, status=400)
+
+        # Parse ISO format date
+        try:
+            new_date = timezone.make_aware(
+                datetime.fromisoformat(new_date_str.replace('Z', '+00:00'))
+            )
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Invalid date format: {str(e)}'
+            }, status=400)
+
+        # Update task
+        task.due_date = new_date
+        task.updated_at = timezone.now()
+        task.save()
+
+        return JsonResponse({
+            'success': True,
+            'taskId': task.id,
+            'title': task.title,
+            'newDueDate': new_date.isoformat(),
+            'message': f'Task "{task.title}" rescheduled to {new_date.strftime("%Y-%m-%d %H:%M")}'
+        })
+    except Task.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Task not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+def calendar_view(request):
+    """Render calendar page"""
+    return render(request, 'calendar.html')
+
 
 @login_required
 def chatbot_home(request):

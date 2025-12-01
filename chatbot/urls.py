@@ -28,4 +28,9 @@ urlpatterns = [
     # Async message endpoints
     path('api/sessions/<int:session_id>/send/', views.api_send_message_async, name='api_send_message_async'),
     path('api/message/<str:request_id>/status/', views.api_check_response, name='api_check_response'),
+
+    # Calendar endpoints (Phase 3)
+    path('api/tasks/calendar/', views.api_tasks_calendar, name='api_tasks_calendar'),
+    path('api/tasks/<int:task_id>/update_due_date/', views.api_task_update_due_date, name='api_task_update_due_date'),
+    path('calendar/', views.calendar_view, name='calendar_view'),
 ]
