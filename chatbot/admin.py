@@ -1,6 +1,11 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Chat, ChatSession, Task
+from .models import (
+    Chat, ChatSession, Task,
+    Notification, NotificationPreference,
+    RecurringTaskTemplate, RecurringTaskInstance,
+    TaskAnalytics, ChatAnalytics
+)
 
 
 # ========== CHAT SESSION ADMIN ==========
@@ -285,3 +290,344 @@ class TaskAdmin(admin.ModelAdmin):
         """Optimize queryset with select_related"""
         qs = super().get_queryset(request)
         return qs.select_related('user', 'created_from_chat')
+
+
+# ========== NOTIFICATION ADMIN (PHASE 4) ==========
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    """Admin interface for Notifications"""
+
+    list_display = ('subject', 'user_link', 'type_badge', 'is_sent_badge', 'sent_at', 'created_at')
+    list_filter = ('notification_type', 'is_sent', 'created_at', 'user')
+    search_fields = ('subject', 'message', 'user__username', 'user__email')
+    readonly_fields = ('created_at', 'sent_at', 'read_at', 'last_error')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Notification Details', {
+            'fields': ('subject', 'message', 'notification_type'),
+            'description': 'Notification content and type'
+        }),
+        ('Recipient', {
+            'fields': ('user', 'task'),
+            'description': 'User and related task (if any)'
+        }),
+        ('Delivery Status', {
+            'fields': ('is_sent', 'sent_at', 'created_at', 'read_at'),
+            'description': 'Delivery and reading status'
+        }),
+        ('Error Tracking', {
+            'fields': ('attempts', 'last_error'),
+            'classes': ('collapse',),
+            'description': 'Retry attempts and error messages'
+        }),
+    )
+
+    def user_link(self, obj):
+        """Display user with link"""
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def type_badge(self, obj):
+        """Display notification type as badge"""
+        colors = {
+            'deadline_reminder': '#FF9800',
+            'task_due_today': '#FFC107',
+            'task_overdue': '#F44336',
+            'task_completed': '#4CAF50',
+            'recurring_created': '#2196F3',
+        }
+        color = colors.get(obj.notification_type, '#9E9E9E')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_notification_type_display()
+        )
+    type_badge.short_description = 'Type'
+    type_badge.admin_order_field = 'notification_type'
+
+    def is_sent_badge(self, obj):
+        """Display sent status"""
+        if obj.is_sent:
+            return format_html('<span style="color: green; font-weight: bold;">✓ Sent</span>')
+        else:
+            return format_html('<span style="color: orange;">Pending</span>')
+    is_sent_badge.short_description = 'Sent'
+    is_sent_badge.admin_order_field = 'is_sent'
+
+    def get_queryset(self, request):
+        """Optimize queryset"""
+        qs = super().get_queryset(request)
+        return qs.select_related('user', 'task')
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    """Admin interface for Notification Preferences"""
+
+    list_display = ('user_link', 'deadline_enabled_badge', 'overdue_enabled_badge', 'daily_digest_badge', 'updated_at')
+    list_filter = ('deadline_reminder_enabled', 'overdue_reminder_enabled', 'daily_digest_enabled', 'updated_at')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('created_at', 'updated_at')
+
+    fieldsets = (
+        ('User', {
+            'fields': ('user',),
+        }),
+        ('Deadline Reminders', {
+            'fields': ('deadline_reminder_enabled', 'reminder_days_before', 'reminder_time'),
+        }),
+        ('Overdue Notifications', {
+            'fields': ('overdue_reminder_enabled',),
+        }),
+        ('Daily Digest', {
+            'fields': ('daily_digest_enabled', 'digest_time'),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def user_link(self, obj):
+        """Display user with link"""
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def deadline_enabled_badge(self, obj):
+        """Display deadline reminder status"""
+        if obj.deadline_reminder_enabled:
+            return format_html('<span style="color: green; font-weight: bold;">✓ Enabled</span>')
+        return format_html('<span style="color: gray;">Disabled</span>')
+    deadline_enabled_badge.short_description = 'Deadline Reminders'
+
+    def overdue_enabled_badge(self, obj):
+        """Display overdue notification status"""
+        if obj.overdue_reminder_enabled:
+            return format_html('<span style="color: green; font-weight: bold;">✓ Enabled</span>')
+        return format_html('<span style="color: gray;">Disabled</span>')
+    overdue_enabled_badge.short_description = 'Overdue Notifications'
+
+    def daily_digest_badge(self, obj):
+        """Display daily digest status"""
+        if obj.daily_digest_enabled:
+            return format_html('<span style="color: green; font-weight: bold;">✓ Enabled</span>')
+        return format_html('<span style="color: gray;">Disabled</span>')
+    daily_digest_badge.short_description = 'Daily Digest'
+
+
+# ========== RECURRING TASK ADMIN (PHASE 4) ==========
+
+@admin.register(RecurringTaskTemplate)
+class RecurringTaskTemplateAdmin(admin.ModelAdmin):
+    """Admin interface for Recurring Task Templates"""
+
+    list_display = ('title', 'user_link', 'frequency_badge', 'priority_badge', 'is_active_badge', 'next_instance_date', 'created_at')
+    list_filter = ('frequency', 'priority', 'is_active', 'created_at', 'user')
+    search_fields = ('title', 'description', 'user__username')
+    readonly_fields = ('created_at', 'updated_at', 'last_instance_created')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Task Template', {
+            'fields': ('user', 'title', 'description', 'priority'),
+        }),
+        ('Recurrence Settings', {
+            'fields': ('frequency', 'start_date', 'end_date', 'is_active'),
+        }),
+        ('Schedule', {
+            'fields': ('next_instance_date', 'last_instance_created'),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def user_link(self, obj):
+        """Display user with link"""
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def frequency_badge(self, obj):
+        """Display frequency as badge"""
+        colors = {
+            'daily': '#F44336',
+            'weekly': '#FF9800',
+            'biweekly': '#2196F3',
+            'monthly': '#4CAF50',
+            'quarterly': '#9C27B0',
+            'yearly': '#009688',
+        }
+        color = colors.get(obj.frequency, '#9E9E9E')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_frequency_display()
+        )
+    frequency_badge.short_description = 'Frequency'
+    frequency_badge.admin_order_field = 'frequency'
+
+    def priority_badge(self, obj):
+        """Display priority as badge"""
+        colors = {
+            'low': '#4CAF50',
+            'medium': '#2196F3',
+            'high': '#FF9800',
+            'urgent': '#F44336',
+        }
+        color = colors.get(obj.priority, '#2196F3')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px; font-weight: bold;">{}</span>',
+            color,
+            obj.get_priority_display()
+        )
+    priority_badge.short_description = 'Priority'
+    priority_badge.admin_order_field = 'priority'
+
+    def is_active_badge(self, obj):
+        """Display active status"""
+        if obj.is_active:
+            return format_html('<span style="color: green; font-weight: bold;">✓ Active</span>')
+        return format_html('<span style="color: red;">Inactive</span>')
+    is_active_badge.short_description = 'Status'
+    is_active_badge.admin_order_field = 'is_active'
+
+    def get_queryset(self, request):
+        """Optimize queryset"""
+        qs = super().get_queryset(request)
+        return qs.select_related('user')
+
+
+@admin.register(RecurringTaskInstance)
+class RecurringTaskInstanceAdmin(admin.ModelAdmin):
+    """Admin interface for Recurring Task Instances"""
+
+    list_display = ('template_link', 'task_link', 'instance_number', 'created_at')
+    list_filter = ('template', 'created_at')
+    search_fields = ('template__title', 'task__title', 'template__user__username')
+    readonly_fields = ('created_at',)
+
+    fieldsets = (
+        ('Instance Info', {
+            'fields': ('template', 'task', 'instance_number'),
+        }),
+        ('Timestamp', {
+            'fields': ('created_at',),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def template_link(self, obj):
+        """Display template with link"""
+        url = f'/admin/chatbot/recurringtasktemplate/{obj.template.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.template.title)
+    template_link.short_description = 'Template'
+    template_link.admin_order_field = 'template__title'
+
+    def task_link(self, obj):
+        """Display task with link"""
+        url = f'/admin/chatbot/task/{obj.task.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.task.title)
+    task_link.short_description = 'Task'
+    task_link.admin_order_field = 'task__title'
+
+    def get_queryset(self, request):
+        """Optimize queryset"""
+        qs = super().get_queryset(request)
+        return qs.select_related('template', 'task')
+
+
+# ========== ANALYTICS ADMIN (PHASE 5) ==========
+
+@admin.register(TaskAnalytics)
+class TaskAnalyticsAdmin(admin.ModelAdmin):
+    """Admin interface for Task Analytics"""
+
+    list_display = ('user_link', 'date', 'total_tasks', 'completion_rate_display', 'overdue_count', 'created_at')
+    list_filter = ('date', 'user')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('created_at',)
+
+    fieldsets = (
+        ('User & Date', {
+            'fields': ('user', 'date'),
+        }),
+        ('Task Counts', {
+            'fields': ('total_tasks', 'pending_count', 'in_progress_count', 'completed_count', 'completed_today', 'overdue_count'),
+        }),
+        ('Priority Breakdown', {
+            'fields': ('urgent_count', 'high_count', 'medium_count', 'low_count'),
+            'classes': ('collapse',),
+        }),
+        ('Metrics', {
+            'fields': ('completion_rate',),
+        }),
+        ('Timestamp', {
+            'fields': ('created_at',),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def user_link(self, obj):
+        """Display user with link"""
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def completion_rate_display(self, obj):
+        """Display completion rate as percentage"""
+        return f"{obj.completion_rate:.1f}%"
+    completion_rate_display.short_description = 'Completion Rate'
+    completion_rate_display.admin_order_field = 'completion_rate'
+
+    def get_queryset(self, request):
+        """Optimize queryset"""
+        qs = super().get_queryset(request)
+        return qs.select_related('user')
+
+
+@admin.register(ChatAnalytics)
+class ChatAnalyticsAdmin(admin.ModelAdmin):
+    """Admin interface for Chat Analytics"""
+
+    list_display = ('user_link', 'date', 'total_messages', 'user_messages', 'ai_responses', 'total_sessions', 'created_at')
+    list_filter = ('date', 'user')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('created_at',)
+
+    fieldsets = (
+        ('User & Date', {
+            'fields': ('user', 'date'),
+        }),
+        ('Message Counts', {
+            'fields': ('total_messages', 'user_messages', 'ai_responses'),
+        }),
+        ('Session Info', {
+            'fields': ('total_sessions', 'active_sessions', 'avg_session_length'),
+        }),
+        ('Timestamp', {
+            'fields': ('created_at',),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def user_link(self, obj):
+        """Display user with link"""
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def get_queryset(self, request):
+        """Optimize queryset"""
+        qs = super().get_queryset(request)
+        return qs.select_related('user')

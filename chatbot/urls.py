@@ -33,4 +33,16 @@ urlpatterns = [
     path('api/tasks/calendar/', views.api_tasks_calendar, name='api_tasks_calendar'),
     path('api/tasks/<int:task_id>/update_due_date/', views.api_task_update_due_date, name='api_task_update_due_date'),
     path('calendar/', views.calendar_view, name='calendar_view'),
+
+    # Notification endpoints (Phase 4)
+    path('api/notifications/', views.api_notifications_list, name='api_notifications_list'),
+    path('api/notifications/<int:notification_id>/read/', views.api_notification_mark_read, name='api_notification_mark_read'),
+
+    # Recurring tasks endpoints (Phase 4)
+    path('api/recurring-tasks/', views.api_recurring_tasks_list, name='api_recurring_tasks_list'),
+
+    # Analytics endpoints (Phase 5)
+    path('api/analytics/metrics/', views.api_productivity_metrics, name='api_productivity_metrics'),
+    path('api/analytics/insights/', views.api_task_insights, name='api_task_insights'),
+    path('api/analytics/weekly-report/', views.api_weekly_report, name='api_weekly_report'),
 ]

@@ -120,3 +120,182 @@ class Task(models.Model):
             diff = self.due_date - timezone.now()
             return diff.days
         return None
+
+
+# ========== NOTIFICATION SYSTEM MODELS (PHASE 4) ==========
+
+class Notification(models.Model):
+    """Tracks notifications sent to users"""
+
+    NOTIFICATION_TYPES = [
+        ('deadline_reminder', 'Deadline Reminder'),
+        ('task_due_today', 'Task Due Today'),
+        ('task_overdue', 'Task Overdue'),
+        ('task_completed', 'Task Completed'),
+        ('recurring_created', 'Recurring Task Created'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
+    notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPES)
+    subject = models.CharField(max_length=200)
+    message = models.TextField()
+    is_sent = models.BooleanField(default=False)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    attempts = models.IntegerField(default=0)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['user', 'is_sent']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} - {self.get_notification_type_display()}'
+
+    def mark_as_read(self):
+        """Mark notification as read"""
+        if not self.read_at:
+            from django.utils import timezone
+            self.read_at = timezone.now()
+            self.save()
+
+
+class NotificationPreference(models.Model):
+    """User's notification settings"""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='notification_preferences')
+    deadline_reminder_enabled = models.BooleanField(default=True)
+    reminder_days_before = models.IntegerField(default=1)
+    reminder_time = models.TimeField(default='09:00')
+    overdue_reminder_enabled = models.BooleanField(default=True)
+    daily_digest_enabled = models.BooleanField(default=False)
+    digest_time = models.TimeField(default='08:00')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Notification Preferences"
+
+    def __str__(self):
+        return f'{self.user.username} - Notification Settings'
+
+
+# ========== RECURRING TASK MODELS (PHASE 4) ==========
+
+class RecurringTaskTemplate(models.Model):
+    """Template for recurring tasks"""
+
+    FREQUENCY_CHOICES = [
+        ('daily', 'Daily'),
+        ('weekly', 'Weekly'),
+        ('biweekly', 'Bi-weekly'),
+        ('monthly', 'Monthly'),
+        ('quarterly', 'Quarterly'),
+        ('yearly', 'Yearly'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recurring_tasks')
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default='')
+    priority = models.CharField(max_length=20, choices=Task.PRIORITY_CHOICES, default='medium')
+    frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES)
+    start_date = models.DateTimeField()
+    end_date = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+    last_instance_created = models.DateTimeField(null=True, blank=True)
+    next_instance_date = models.DateTimeField()
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['user', 'next_instance_date']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} - {self.title} ({self.get_frequency_display()})'
+
+    def get_frequency_display(self):
+        """Return human-readable frequency"""
+        freq_map = dict(self.FREQUENCY_CHOICES)
+        return freq_map.get(self.frequency, 'Unknown')
+
+
+class RecurringTaskInstance(models.Model):
+    """Tracks individual instances of recurring tasks"""
+
+    template = models.ForeignKey(RecurringTaskTemplate, on_delete=models.CASCADE, related_name='instances')
+    task = models.OneToOneField(Task, on_delete=models.CASCADE, related_name='recurring_instance')
+    created_at = models.DateTimeField(auto_now_add=True)
+    instance_number = models.IntegerField()
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ('template', 'task')
+
+    def __str__(self):
+        return f'{self.template.title} - Instance {self.instance_number}'
+
+
+# ========== ANALYTICS MODELS (PHASE 5) ==========
+
+class TaskAnalytics(models.Model):
+    """Daily task analytics snapshot for trending and reporting"""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='task_analytics')
+    date = models.DateField()
+    total_tasks = models.IntegerField()
+    pending_count = models.IntegerField()
+    in_progress_count = models.IntegerField()
+    completed_count = models.IntegerField()
+    overdue_count = models.IntegerField()
+    completed_today = models.IntegerField()
+    completion_rate = models.FloatField()
+    urgent_count = models.IntegerField()
+    high_count = models.IntegerField()
+    medium_count = models.IntegerField()
+    low_count = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'date')
+        ordering = ['-date']
+        indexes = [
+            models.Index(fields=['user', '-date']),
+        ]
+        verbose_name_plural = "Task Analytics"
+
+    def __str__(self):
+        return f'{self.user.username} - {self.date}'
+
+
+class ChatAnalytics(models.Model):
+    """Daily chat activity analytics"""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_analytics')
+    date = models.DateField()
+    total_messages = models.IntegerField()
+    user_messages = models.IntegerField()
+    ai_responses = models.IntegerField()
+    total_sessions = models.IntegerField()
+    active_sessions = models.IntegerField()
+    avg_session_length = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'date')
+        ordering = ['-date']
+        indexes = [
+            models.Index(fields=['user', '-date']),
+        ]
+        verbose_name_plural = "Chat Analytics"
+
+    def __str__(self):
+        return f'{self.user.username} - {self.date}'

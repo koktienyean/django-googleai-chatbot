@@ -1,12 +1,17 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.core.cache import cache
 
 from django.contrib import auth
 from django.contrib.auth.models import User
-from .models import Chat, ChatSession, Task
+from .models import (
+    Chat, ChatSession, Task,
+    Notification, NotificationPreference,
+    RecurringTaskTemplate, RecurringTaskInstance,
+    TaskAnalytics, ChatAnalytics
+)
 from .message_queue import message_processor
 
 from django.utils import timezone
@@ -95,6 +100,40 @@ def ask_gemini(message, model='gemini-2.0-flash', user=None):
                 """Get summary counts of all tasks grouped by status: total, pending, in_progress, completed, cancelled, and overdue"""
                 return get_task_summary(user)
 
+            # Phase 4: Recurring tasks and notifications
+            def create_recurring_task_tool_wrapper(title: str, description: str = '', priority: str = 'medium', frequency: str = 'weekly', start_date_str: str = None, end_date_str: str = None):
+                """Create a recurring task. Frequency: daily, weekly, biweekly, monthly, quarterly, yearly"""
+                return create_recurring_task_tool(user, title, description, priority, frequency, start_date_str, end_date_str)
+
+            def list_recurring_tasks_tool_wrapper():
+                """List all recurring task templates"""
+                return list_recurring_tasks_tool(user)
+
+            def skip_recurring_instance_tool_wrapper(template_id: int):
+                """Skip next instance of a recurring task"""
+                return skip_recurring_instance_tool(user, template_id)
+
+            def get_notification_summary_tool_wrapper():
+                """Get notification summary and recent notifications"""
+                return get_notification_summary_tool(user)
+
+            def set_notification_preference_tool_wrapper(preference_type: str, enabled: bool):
+                """Update notification preferences. Types: deadline_reminder, overdue_reminder, daily_digest"""
+                return set_notification_preference_tool(user, preference_type, enabled)
+
+            # Phase 5: Analytics
+            def get_productivity_metrics_tool_wrapper():
+                """Get productivity metrics: completion rate, task counts, average completion time"""
+                return get_productivity_metrics_tool(user)
+
+            def get_task_insights_tool_wrapper():
+                """Get AI-powered insights about task performance and productivity"""
+                return get_task_insights_tool(user)
+
+            def generate_weekly_report_tool_wrapper():
+                """Generate a weekly productivity report"""
+                return generate_weekly_report_tool(user)
+
             tools = [
                 # Chat history and statistics
                 search_chats_tool,
@@ -111,7 +150,18 @@ def ask_gemini(message, model='gemini-2.0-flash', user=None):
                 update_task_priority_tool,
                 delete_task_tool,
                 get_pending_tasks_tool,
-                get_task_summary_tool
+                get_task_summary_tool,
+                # Phase 4: Recurring tasks
+                create_recurring_task_tool_wrapper,
+                list_recurring_tasks_tool_wrapper,
+                skip_recurring_instance_tool_wrapper,
+                # Phase 4: Notifications
+                get_notification_summary_tool_wrapper,
+                set_notification_preference_tool_wrapper,
+                # Phase 5: Analytics
+                get_productivity_metrics_tool_wrapper,
+                get_task_insights_tool_wrapper,
+                generate_weekly_report_tool_wrapper,
             ]
 
         # Create model with tools if user is provided
@@ -184,6 +234,27 @@ Always call the tool first, then provide a friendly response about what was done
                 result = get_pending_tasks(user, function_args.get('limit', 5))
             elif function_name == 'get_task_summary_tool':
                 result = get_task_summary(user)
+            # Phase 4: Recurring tasks
+            elif function_name == 'create_recurring_task_tool_wrapper':
+                result = create_recurring_task_tool(user, function_args.get('title'), function_args.get('description', ''),
+                                                  function_args.get('priority', 'medium'), function_args.get('frequency', 'weekly'),
+                                                  function_args.get('start_date_str'), function_args.get('end_date_str'))
+            elif function_name == 'list_recurring_tasks_tool_wrapper':
+                result = list_recurring_tasks_tool(user)
+            elif function_name == 'skip_recurring_instance_tool_wrapper':
+                result = skip_recurring_instance_tool(user, function_args.get('template_id'))
+            # Phase 4: Notifications
+            elif function_name == 'get_notification_summary_tool_wrapper':
+                result = get_notification_summary_tool(user)
+            elif function_name == 'set_notification_preference_tool_wrapper':
+                result = set_notification_preference_tool(user, function_args.get('preference_type'), function_args.get('enabled'))
+            # Phase 5: Analytics
+            elif function_name == 'get_productivity_metrics_tool_wrapper':
+                result = get_productivity_metrics_tool(user)
+            elif function_name == 'get_task_insights_tool_wrapper':
+                result = get_task_insights_tool(user)
+            elif function_name == 'generate_weekly_report_tool_wrapper':
+                result = generate_weekly_report_tool(user)
             else:
                 result = {'error': f'Unknown function: {function_name}'}
 
@@ -739,6 +810,381 @@ def api_task_update_due_date(request, task_id):
 def calendar_view(request):
     """Render calendar page"""
     return render(request, 'calendar.html')
+
+
+# ========== PHASE 4: NOTIFICATION & RECURRING TASK TOOLS ==========
+
+def create_recurring_task_tool(user, title: str, description: str = '', priority: str = 'medium', frequency: str = 'weekly', start_date_str: str = None, end_date_str: str = None):
+    """Create a recurring task template. Frequency must be one of: daily, weekly, biweekly, monthly, quarterly, yearly"""
+    try:
+        # Parse dates
+        if not start_date_str:
+            start_date = timezone.now()
+        else:
+            # Handle various date formats
+            try:
+                start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
+                if start_date.tzinfo is None:
+                    start_date = timezone.make_aware(start_date)
+            except:
+                start_date = timezone.now()
+
+        end_date = None
+        if end_date_str:
+            try:
+                end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                if end_date.tzinfo is None:
+                    end_date = timezone.make_aware(end_date)
+            except:
+                pass
+
+        # Validate frequency
+        valid_frequencies = ['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly']
+        if frequency not in valid_frequencies:
+            return {'error': f'Invalid frequency. Must be one of: {", ".join(valid_frequencies)}'}
+
+        # Calculate next instance date based on frequency
+        next_instance = start_date
+        if frequency == 'daily':
+            next_instance = start_date + timedelta(days=1)
+        elif frequency == 'weekly':
+            next_instance = start_date + timedelta(weeks=1)
+        elif frequency == 'biweekly':
+            next_instance = start_date + timedelta(weeks=2)
+        elif frequency == 'monthly':
+            next_instance = start_date + timedelta(days=30)
+        elif frequency == 'quarterly':
+            next_instance = start_date + timedelta(days=90)
+        elif frequency == 'yearly':
+            next_instance = start_date + timedelta(days=365)
+
+        # Create template
+        template = RecurringTaskTemplate.objects.create(
+            user=user,
+            title=title,
+            description=description,
+            priority=priority,
+            frequency=frequency,
+            start_date=start_date,
+            end_date=end_date,
+            next_instance_date=next_instance,
+            is_active=True
+        )
+
+        # Create first instance
+        first_task = Task.objects.create(
+            user=user,
+            title=title,
+            description=description,
+            priority=priority,
+            due_date=start_date
+        )
+
+        RecurringTaskInstance.objects.create(
+            template=template,
+            task=first_task,
+            instance_number=1
+        )
+
+        return {
+            'template_id': template.id,
+            'title': title,
+            'frequency': frequency,
+            'start_date': start_date.isoformat(),
+            'first_task_id': first_task.id,
+            'message': f'Recurring task "{title}" created with {frequency} frequency'
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def list_recurring_tasks_tool(user):
+    """List all recurring task templates for user"""
+    try:
+        templates = RecurringTaskTemplate.objects.filter(user=user, is_active=True).order_by('-created_at')
+        return {
+            'total': templates.count(),
+            'templates': [
+                {
+                    'id': t.id,
+                    'title': t.title,
+                    'frequency': t.frequency,
+                    'priority': t.priority,
+                    'next_instance': t.next_instance_date.isoformat(),
+                    'is_active': t.is_active,
+                }
+                for t in templates
+            ]
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def skip_recurring_instance_tool(user, template_id: int):
+    """Skip the next instance of a recurring task"""
+    try:
+        template = RecurringTaskTemplate.objects.get(id=template_id, user=user)
+
+        # Calculate next instance date
+        if template.frequency == 'daily':
+            template.next_instance_date = template.next_instance_date + timedelta(days=1)
+        elif template.frequency == 'weekly':
+            template.next_instance_date = template.next_instance_date + timedelta(weeks=1)
+        elif template.frequency == 'biweekly':
+            template.next_instance_date = template.next_instance_date + timedelta(weeks=2)
+        elif template.frequency == 'monthly':
+            template.next_instance_date = template.next_instance_date + timedelta(days=30)
+        elif template.frequency == 'quarterly':
+            template.next_instance_date = template.next_instance_date + timedelta(days=90)
+        elif template.frequency == 'yearly':
+            template.next_instance_date = template.next_instance_date + timedelta(days=365)
+
+        # Check if end date exceeded
+        if template.end_date and template.next_instance_date > template.end_date:
+            template.is_active = False
+
+        template.save()
+
+        return {
+            'template_id': template.id,
+            'title': template.title,
+            'next_instance': template.next_instance_date.isoformat(),
+            'message': f'Skipped next instance of "{template.title}"'
+        }
+    except RecurringTaskTemplate.DoesNotExist:
+        return {'error': 'Recurring task template not found'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def get_notification_summary_tool(user):
+    """Get notification summary for user"""
+    try:
+        unread = Notification.objects.filter(user=user, read_at__isnull=True).count()
+        recent = Notification.objects.filter(user=user).order_by('-created_at')[:5]
+
+        return {
+            'unread_count': unread,
+            'total_count': Notification.objects.filter(user=user).count(),
+            'recent': [
+                {
+                    'id': n.id,
+                    'type': n.notification_type,
+                    'subject': n.subject,
+                    'sent': n.is_sent,
+                    'created_at': n.created_at.isoformat(),
+                }
+                for n in recent
+            ]
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def set_notification_preference_tool(user, preference_type: str, enabled: bool):
+    """Update notification preferences. Types: deadline_reminder, overdue_reminder, daily_digest"""
+    try:
+        prefs, created = NotificationPreference.objects.get_or_create(user=user)
+
+        if preference_type == 'deadline_reminder':
+            prefs.deadline_reminder_enabled = enabled
+        elif preference_type == 'overdue_reminder':
+            prefs.overdue_reminder_enabled = enabled
+        elif preference_type == 'daily_digest':
+            prefs.daily_digest_enabled = enabled
+        else:
+            return {'error': f'Unknown preference type: {preference_type}'}
+
+        prefs.save()
+
+        return {
+            'preference': preference_type,
+            'enabled': enabled,
+            'message': f'{preference_type} notifications are now {"enabled" if enabled else "disabled"}'
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+# ========== PHASE 5: ANALYTICS TOOLS ==========
+
+def get_productivity_metrics_tool(user):
+    """Get user's productivity metrics"""
+    try:
+        tasks = Task.objects.filter(user=user)
+        completed_tasks = tasks.filter(status='completed')
+        overdue_tasks = tasks.filter(status__in=['pending', 'in_progress']).filter(
+            due_date__lt=timezone.now()
+        ).count()
+
+        # Calculate completion rate
+        total = tasks.count()
+        completion_rate = (completed_tasks.count() / total * 100) if total > 0 else 0
+
+        # Calculate average time to complete
+        completed_with_dates = completed_tasks.filter(completed_at__isnull=False).filter(created_at__isnull=False)
+        if completed_with_dates.exists():
+            total_duration = sum((t.completed_at - t.created_at).total_seconds() for t in completed_with_dates)
+            avg_duration_days = total_duration / (completed_with_dates.count() * 86400)
+        else:
+            avg_duration_days = 0
+
+        return {
+            'total_tasks': total,
+            'completed_tasks': completed_tasks.count(),
+            'pending_tasks': tasks.filter(status='pending').count(),
+            'in_progress_tasks': tasks.filter(status='in_progress').count(),
+            'overdue_tasks': overdue_tasks,
+            'completion_rate': round(completion_rate, 1),
+            'avg_days_to_complete': round(avg_duration_days, 1),
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def get_task_insights_tool(user):
+    """Get AI-powered task insights"""
+    try:
+        insights = []
+        metrics = get_productivity_metrics_tool(user)
+
+        if 'error' not in metrics:
+            # Insight 1: High completion rate
+            if metrics['completion_rate'] >= 80:
+                insights.append({
+                    'type': 'positive',
+                    'title': 'Excellent Progress!',
+                    'message': f'You\'re completing {metrics["completion_rate"]:.0f}% of your tasks. Keep it up!'
+                })
+            elif metrics['completion_rate'] < 30 and metrics['total_tasks'] > 5:
+                insights.append({
+                    'type': 'warning',
+                    'title': 'Low Completion Rate',
+                    'message': f'Only {metrics["completion_rate"]:.0f}% of tasks are completed. Try breaking down larger tasks.'
+                })
+
+            # Insight 2: Overdue tasks
+            if metrics['overdue_tasks'] > 0:
+                insights.append({
+                    'type': 'warning',
+                    'title': 'Overdue Tasks',
+                    'message': f'You have {metrics["overdue_tasks"]} overdue tasks. Prioritize completing them.'
+                })
+
+            # Insight 3: Task velocity
+            if metrics['avg_days_to_complete'] > 0:
+                insights.append({
+                    'type': 'info',
+                    'title': 'Average Task Duration',
+                    'message': f'Your tasks take an average of {metrics["avg_days_to_complete"]:.0f} days to complete.'
+                })
+
+        return {'insights': insights}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def generate_weekly_report_tool(user):
+    """Generate weekly productivity report"""
+    try:
+        # Get last 7 days of analytics
+        today = timezone.now().date()
+        week_ago = today - timedelta(days=7)
+
+        analytics = TaskAnalytics.objects.filter(
+            user=user,
+            date__gte=week_ago
+        ).order_by('-date')
+
+        if not analytics.exists():
+            return {'message': 'No analytics data available for this week'}
+
+        total_completed = sum(a.completed_today for a in analytics)
+        avg_completion_rate = sum(a.completion_rate for a in analytics) / analytics.count() if analytics.count() > 0 else 0
+
+        return {
+            'week_of': week_ago.isoformat(),
+            'days_tracked': analytics.count(),
+            'total_completed': total_completed,
+            'avg_completion_rate': round(avg_completion_rate, 1),
+            'highest_completion_day': max((a.date, a.completed_today) for a in analytics)[0].isoformat() if analytics.exists() else None,
+            'message': f'Weekly report: {total_completed} tasks completed with {avg_completion_rate:.0f}% average completion rate'
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+# ========== PHASE 4-5 API ENDPOINTS ==========
+
+@login_required
+def api_notifications_list(request):
+    """Get user's notifications"""
+    notifications = Notification.objects.filter(user=request.user).order_by('-created_at')[:20]
+    return JsonResponse({
+        'notifications': [
+            {
+                'id': n.id,
+                'type': n.get_notification_type_display(),
+                'subject': n.subject,
+                'message': n.message,
+                'is_sent': n.is_sent,
+                'is_read': n.read_at is not None,
+                'sent_at': n.sent_at.isoformat() if n.sent_at else None,
+                'created_at': n.created_at.isoformat(),
+            }
+            for n in notifications
+        ]
+    })
+
+
+@login_required
+def api_notification_mark_read(request, notification_id):
+    """Mark notification as read"""
+    try:
+        notification = Notification.objects.get(id=notification_id, user=request.user)
+        notification.mark_as_read()
+        return JsonResponse({'success': True})
+    except Notification.DoesNotExist:
+        return JsonResponse({'error': 'Notification not found'}, status=404)
+
+
+@login_required
+def api_recurring_tasks_list(request):
+    """List recurring task templates"""
+    templates = RecurringTaskTemplate.objects.filter(user=request.user, is_active=True)
+    return JsonResponse({
+        'total': templates.count(),
+        'templates': [
+            {
+                'id': t.id,
+                'title': t.title,
+                'description': t.description,
+                'frequency': t.get_frequency_display(),
+                'priority': t.get_priority_display(),
+                'next_instance': t.next_instance_date.isoformat(),
+                'instances_count': t.instances.count(),
+            }
+            for t in templates
+        ]
+    })
+
+
+@login_required
+def api_productivity_metrics(request):
+    """Get productivity metrics"""
+    return JsonResponse(get_productivity_metrics_tool(request.user))
+
+
+@login_required
+def api_task_insights(request):
+    """Get task insights"""
+    return JsonResponse(get_task_insights_tool(request.user))
+
+
+@login_required
+def api_weekly_report(request):
+    """Get weekly report"""
+    return JsonResponse(generate_weekly_report_tool(request.user))
 
 
 @login_required
