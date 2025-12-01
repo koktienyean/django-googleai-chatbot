@@ -63,35 +63,35 @@ def ask_gemini(message, model='gemini-2.0-flash', user=None):
 
             # Task management tools
             def create_task_tool(title: str, description: str = '', priority: str = 'medium', due_date_str: str = None):
-                """Create a new task for the user"""
+                """Create a new task for the user. Priority must be one of: low, medium, high, urgent. Due date format: YYYY-MM-DD or natural language like 'tomorrow' or 'next Friday'"""
                 return create_task(user, title, description, priority, due_date_str)
 
             def list_tasks_tool(status: str = 'all', limit: int = 10):
-                """List user's tasks filtered by status (all, pending, in_progress, completed, cancelled)"""
+                """List user's tasks. Status can be: all, pending, in_progress, completed, or cancelled. Returns task title, description, priority, status, and due date"""
                 return list_my_tasks(user, status, limit)
 
             def get_task_details_tool(task_id: int):
-                """Get detailed information about a specific task"""
+                """Get complete details of a specific task by task ID including title, description, priority, status, due date, and when it was created"""
                 return get_task_details(user, task_id)
 
             def update_task_status_tool(task_id: int, status: str):
-                """Update task status (pending, in_progress, completed, cancelled)"""
+                """Change task status. Status must be one of: pending, in_progress, completed, or cancelled"""
                 return update_task_status(user, task_id, status)
 
             def update_task_priority_tool(task_id: int, priority: str):
-                """Update task priority (low, medium, high, urgent)"""
+                """Change task priority. Priority must be one of: low, medium, high, or urgent"""
                 return update_task_priority(user, task_id, priority)
 
             def delete_task_tool(task_id: int):
-                """Delete a task"""
+                """Delete a task permanently from the system"""
                 return delete_task(user, task_id)
 
             def get_pending_tasks_tool(limit: int = 5):
-                """Get urgent and high priority pending tasks"""
+                """Get user's urgent and high priority pending tasks that need attention"""
                 return get_pending_tasks(user, limit)
 
             def get_task_summary_tool():
-                """Get summary of all tasks by status"""
+                """Get summary counts of all tasks grouped by status: total, pending, in_progress, completed, cancelled, and overdue"""
                 return get_task_summary(user)
 
             tools = [
@@ -114,8 +114,25 @@ def ask_gemini(message, model='gemini-2.0-flash', user=None):
             ]
 
         # Create model with tools if user is provided
+        system_instruction = None
         if tools:
-            model_obj = genai.GenerativeModel(model, tools=tools)
+            system_instruction = """You are a helpful AI assistant with access to tools for managing tasks and querying chat history.
+
+When the user asks you to:
+- Create a task: Use create_task_tool directly without asking for confirmation
+- List/show tasks: Use list_tasks_tool or get_task_summary_tool directly
+- Update task status/priority: Use the respective update tools directly
+- Search chats: Use search_chats_tool directly
+- Get statistics: Use get_stats_tool directly
+
+IMPORTANT: Call the appropriate tool IMMEDIATELY when the user requests these actions. Do not ask for confirmation - just call the function and show the result.
+
+For task priorities, accept any reasonable input and normalize to: low, medium, high, or urgent
+For task status, accept any reasonable input and normalize to: pending, in_progress, completed, or cancelled
+
+Always call the tool first, then provide a friendly response about what was done."""
+
+            model_obj = genai.GenerativeModel(model, tools=tools, system_instruction=system_instruction)
         else:
             model_obj = genai.GenerativeModel(model)
 
@@ -559,16 +576,40 @@ def get_pending_tasks(user, limit: int = 5):
 
 
 def get_task_summary(user):
-    """Get summary of all tasks by status"""
+    """Get summary of all tasks by status with full task details"""
     try:
-        return {
-            'total_tasks': Task.objects.filter(user=user).count(),
-            'pending': Task.objects.filter(user=user, status='pending').count(),
-            'in_progress': Task.objects.filter(user=user, status='in_progress').count(),
-            'completed': Task.objects.filter(user=user, status='completed').count(),
-            'cancelled': Task.objects.filter(user=user, status='cancelled').count(),
-            'overdue': sum(1 for t in Task.objects.filter(user=user, status__in=['pending', 'in_progress']) if t.is_overdue())
+        all_tasks = Task.objects.filter(user=user)
+
+        # Build task summary with full details
+        summary = {
+            'total_tasks': all_tasks.count(),
+            'status_counts': {
+                'pending': all_tasks.filter(status='pending').count(),
+                'in_progress': all_tasks.filter(status='in_progress').count(),
+                'completed': all_tasks.filter(status='completed').count(),
+                'cancelled': all_tasks.filter(status='cancelled').count(),
+            },
+            'overdue_count': sum(1 for t in all_tasks.filter(status__in=['pending', 'in_progress']) if t.is_overdue()),
+            'tasks_by_status': {}
         }
+
+        # Add detailed task list grouped by status
+        for status in ['pending', 'in_progress', 'completed', 'cancelled']:
+            tasks = all_tasks.filter(status=status).order_by('-priority', '-created_at')
+            summary['tasks_by_status'][status] = [
+                {
+                    'id': t.id,
+                    'title': t.title,
+                    'description': t.description if t.description else 'No description',
+                    'priority': t.get_priority_display(),
+                    'due_date': t.due_date.strftime('%Y-%m-%d') if t.due_date else 'No deadline',
+                    'is_overdue': t.is_overdue(),
+                    'created_at': t.created_at.strftime('%Y-%m-%d')
+                }
+                for t in tasks
+            ]
+
+        return summary
     except Exception as e:
         return {'error': str(e)}
 
