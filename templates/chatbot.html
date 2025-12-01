@@ -620,6 +620,194 @@
     font-style: italic;
   }
 
+  /* ========== Data Visualization Components ========== */
+  .data-calendar {
+    margin: 12px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 217, 255, 0.1);
+    background: rgba(15, 20, 25, 0.5);
+  }
+
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: rgba(0, 217, 255, 0.1);
+    padding: 1px;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .calendar-month-header {
+    grid-column: 1 / -1;
+    padding: 12px;
+    background: rgba(0, 217, 255, 0.15);
+    text-align: center;
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 1px solid rgba(0, 217, 255, 0.2);
+  }
+
+  .calendar-weekday {
+    padding: 8px;
+    text-align: center;
+    background: rgba(0, 217, 255, 0.08);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 1px solid rgba(0, 217, 255, 0.1);
+  }
+
+  .calendar-day {
+    min-height: 60px;
+    padding: 6px;
+    background: var(--bg-primary);
+    border: 1px solid rgba(0, 217, 255, 0.08);
+    font-size: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .calendar-day:hover {
+    background: rgba(0, 217, 255, 0.05);
+    border-color: rgba(0, 217, 255, 0.2);
+  }
+
+  .calendar-day-number {
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .calendar-day-events {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+  }
+
+  .calendar-event {
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+  }
+
+  .calendar-event-urgent { background: rgba(244, 67, 54, 0.3); color: #ff6b6b; }
+  .calendar-event-high { background: rgba(255, 152, 0, 0.3); color: #ffb74d; }
+  .calendar-event-medium { background: rgba(33, 150, 243, 0.3); color: #64b5f6; }
+  .calendar-event-low { background: rgba(76, 175, 80, 0.3); color: #81c784; }
+
+  .calendar-other-month {
+    background: rgba(0, 0, 0, 0.2);
+    opacity: 0.4;
+  }
+
+  .calendar-today {
+    background: rgba(0, 217, 255, 0.1);
+    border-color: var(--color-primary);
+  }
+
+  /* ========== Data Table Styles ========== */
+  .data-table-wrapper {
+    margin: 12px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 217, 255, 0.1);
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .data-table thead {
+    background: rgba(0, 217, 255, 0.12);
+    border-bottom: 2px solid rgba(0, 217, 255, 0.2);
+  }
+
+  .data-table th {
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-primary);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+
+  .data-table tbody tr {
+    border-bottom: 1px solid rgba(0, 217, 255, 0.08);
+    transition: background var(--transition-fast);
+  }
+
+  .data-table tbody tr:hover {
+    background: rgba(0, 217, 255, 0.05);
+  }
+
+  .data-table td {
+    padding: 10px 12px;
+    color: var(--text-primary);
+  }
+
+  .data-table .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .badge-urgent { background: rgba(244, 67, 54, 0.2); color: #ff6b6b; }
+  .badge-high { background: rgba(255, 152, 0, 0.2); color: #ffb74d; }
+  .badge-medium { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+  .badge-low { background: rgba(76, 175, 80, 0.2); color: #81c784; }
+
+  .badge-pending { background: rgba(255, 193, 7, 0.2); color: #fbc02d; }
+  .badge-in_progress { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+  .badge-completed { background: rgba(76, 175, 80, 0.2); color: #81c784; }
+  .badge-cancelled { background: rgba(158, 158, 158, 0.2); color: #bdbdbd; }
+
+  .view-toggle {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
+    justify-content: center;
+  }
+
+  .view-toggle-btn {
+    padding: 6px 12px;
+    background: rgba(0, 217, 255, 0.1);
+    border: 1px solid rgba(0, 217, 255, 0.2);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+  }
+
+  .view-toggle-btn:hover {
+    background: rgba(0, 217, 255, 0.2);
+    color: var(--color-primary);
+  }
+
+  .view-toggle-btn.active {
+    background: var(--color-primary);
+    color: var(--text-inverse);
+    border-color: var(--color-primary);
+  }
+
   /* ========== Responsive Design ========== */
   @media (max-width: 768px) {
     .sidebar {
@@ -910,8 +1098,11 @@
 
       const data = await response.json();
 
+      // Process and render data visualizations if present
+      const processedResponse = processDataVisualization(data.response);
+
       // Replace loading message with actual response
-      loadingMsg.innerHTML = `<div class="message-content">${data.response}</div>`;
+      loadingMsg.innerHTML = `<div class="message-content">${processedResponse}</div>`;
       loadSessions();
     } catch (error) {
       loadingMsg.innerHTML = `<div class="message-content">Error: ${error.message}</div>`;
@@ -931,6 +1122,199 @@
       "'": '&#039;'
     };
     return text.replace(/[&<>"']/g, m => map[m]);
+  }
+
+  // ========== Data Visualization Functions ==========
+
+  function isCalendarData(data) {
+    // Check if data looks like calendar/event data
+    if (!data || typeof data !== 'object') return false;
+
+    // Check for common calendar patterns
+    return (
+      (data.events && Array.isArray(data.events)) ||
+      (data.tasks && Array.isArray(data.tasks)) ||
+      (Array.isArray(data) && data.length > 0 && data[0].due_date)
+    );
+  }
+
+  function renderCalendarView(data) {
+    const events = data.events || data.tasks || (Array.isArray(data) ? data : []);
+    if (events.length === 0) return '<p>No events to display</p>';
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    const lastDay = new Date(currentYear, currentMonth + 1, 0);
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+    const daysInCalendar = [];
+    let currentDate = new Date(startDate);
+    while (currentDate <= lastDay || daysInCalendar.length % 7 !== 0) {
+      daysInCalendar.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    const monthName = firstDay.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    let html = `<div class="data-calendar"><div class="calendar-grid">`;
+    html += `<div class="calendar-month-header">${monthName}</div>`;
+
+    weekdays.forEach(day => {
+      html += `<div class="calendar-weekday">${day}</div>`;
+    });
+
+    daysInCalendar.forEach(date => {
+      const isCurrentMonth = date.getMonth() === currentMonth;
+      const isToday = date.toDateString() === now.toDateString();
+
+      // Get events for this day
+      const dayEvents = events.filter(event => {
+        const eventDate = new Date(event.due_date || event.date);
+        return eventDate.toDateString() === date.toDateString();
+      });
+
+      let dayClass = 'calendar-day';
+      if (!isCurrentMonth) dayClass += ' calendar-other-month';
+      if (isToday) dayClass += ' calendar-today';
+
+      html += `<div class="${dayClass}">`;
+      html += `<div class="calendar-day-number">${date.getDate()}</div>`;
+      html += `<div class="calendar-day-events">`;
+
+      dayEvents.slice(0, 3).forEach(event => {
+        const priority = event.priority || 'medium';
+        const title = event.title || event.name || 'Event';
+        html += `<div class="calendar-event calendar-event-${priority}" title="${escapeHtml(title)}">${escapeHtml(title)}</div>`;
+      });
+
+      if (dayEvents.length > 3) {
+        html += `<div class="calendar-event" style="font-style: italic; opacity: 0.7;">+${dayEvents.length - 3} more</div>`;
+      }
+
+      html += `</div></div>`;
+    });
+
+    html += `</div></div>`;
+    return html;
+  }
+
+  function renderTableView(data) {
+    const items = data.events || data.tasks || (Array.isArray(data) ? data : []);
+    if (items.length === 0) return '<p>No data to display</p>';
+
+    // Auto-detect columns from first item
+    const firstItem = items[0];
+    const keys = Object.keys(firstItem).filter(k => !k.startsWith('_'));
+
+    let html = `<div class="data-table-wrapper"><table class="data-table"><thead><tr>`;
+
+    keys.forEach(key => {
+      html += `<th>${key.replace(/_/g, ' ')}</th>`;
+    });
+
+    html += `</tr></thead><tbody>`;
+
+    items.forEach(item => {
+      html += `<tr>`;
+      keys.forEach(key => {
+        let value = item[key];
+        let cellContent = value;
+
+        // Format special columns
+        if (key === 'priority' || key === 'status') {
+          const className = `badge badge-${value}`;
+          cellContent = `<span class="${className}">${value}</span>`;
+        } else if (key === 'due_date' || key === 'date') {
+          const date = new Date(value);
+          cellContent = date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+        } else if (typeof value === 'boolean') {
+          cellContent = value ? '✓' : '✗';
+        } else if (typeof value === 'object') {
+          cellContent = JSON.stringify(value).substring(0, 50);
+        }
+
+        html += `<td>${escapeHtml(String(cellContent))}</td>`;
+      });
+      html += `</tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    return html;
+  }
+
+  function processDataVisualization(responseHtml) {
+    // Try to find and render JSON data in the response
+    const jsonMatches = responseHtml.match(/```json([\s\S]*?)```/g);
+
+    if (jsonMatches && jsonMatches.length > 0) {
+      let processedHtml = responseHtml;
+
+      jsonMatches.forEach(match => {
+        const jsonStr = match.replace(/```json|```/g, '').trim();
+        try {
+          const data = JSON.parse(jsonStr);
+
+          if (isCalendarData(data)) {
+            const viewToggle = `
+              <div class="view-toggle">
+                <button class="view-toggle-btn active" onclick="this.parentElement.dataset.view='calendar'; updateVisualization(this.parentElement)">📅 Calendar</button>
+                <button class="view-toggle-btn" onclick="this.parentElement.dataset.view='table'; updateVisualization(this.parentElement)">📊 Table</button>
+              </div>
+            `;
+
+            const calendarView = renderCalendarView(data);
+            const tableView = renderTableView(data);
+
+            const visualization = `
+              <div class="data-visualization" data-view="calendar">
+                ${viewToggle}
+                <div class="calendar-view" style="display: block;">
+                  ${calendarView}
+                </div>
+                <div class="table-view" style="display: none;">
+                  ${tableView}
+                </div>
+              </div>
+            `;
+
+            processedHtml = processedHtml.replace(match, visualization);
+          }
+        } catch (e) {
+          // Not valid JSON or not calendar data, skip
+        }
+      });
+
+      return processedHtml;
+    }
+
+    return responseHtml;
+  }
+
+  function updateVisualization(container) {
+    const view = container.dataset.view;
+    const calendarView = container.querySelector('.calendar-view');
+    const tableView = container.querySelector('.table-view');
+    const buttons = container.querySelectorAll('.view-toggle-btn');
+
+    if (view === 'calendar') {
+      if (calendarView) calendarView.style.display = 'block';
+      if (tableView) tableView.style.display = 'none';
+      buttons.forEach(btn => btn.classList.remove('active'));
+      buttons[0].classList.add('active');
+    } else {
+      if (calendarView) calendarView.style.display = 'none';
+      if (tableView) tableView.style.display = 'block';
+      buttons.forEach(btn => btn.classList.remove('active'));
+      buttons[1].classList.add('active');
+    }
   }
 
   // Load sessions on page load
