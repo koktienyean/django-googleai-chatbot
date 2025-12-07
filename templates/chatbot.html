@@ -890,6 +890,78 @@
     }
   }
 
+  /* ========== Terminal Status Indicator ========== */
+  .terminal-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    margin-bottom: 15px;
+    background: rgba(102, 126, 234, 0.1);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    animation: slideDown 0.3s ease;
+  }
+
+  .terminal-indicator.active {
+    background: rgba(76, 175, 80, 0.1);
+    border-color: rgba(76, 175, 80, 0.3);
+    color: #4CAF50;
+  }
+
+  .terminal-indicator.inactive {
+    background: rgba(244, 67, 54, 0.1);
+    border-color: rgba(244, 67, 54, 0.3);
+    color: #f44336;
+  }
+
+  .terminal-indicator-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  .terminal-indicator-dot.active {
+    background: #4CAF50;
+  }
+
+  .terminal-indicator-dot.inactive {
+    background: #f44336;
+  }
+
+  .terminal-indicator-link {
+    margin-left: auto;
+    padding: 4px 8px;
+    background: rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.5);
+    border-radius: 4px;
+    color: #667eea;
+    text-decoration: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .terminal-indicator-link:hover {
+    background: rgba(102, 126, 234, 0.3);
+    transform: translateX(2px);
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   /* ========== Scrollbar Styling (Firefox) ========== */
   * {
     scrollbar-width: thin;
@@ -917,6 +989,7 @@
     <div class="sidebar-header">
       <h1>💬 Chats</h1>
       <a href="/settings/" class="settings-link" title="Settings">⚙️</a>
+      <a href="/claude-terminal/" class="settings-link" title="Claude Terminal">⌨️</a>
     </div>
 
     <button class="new-chat-btn" id="new-chat-btn">+ New Chat</button>
@@ -962,6 +1035,13 @@
           <div class="message-content">{{ message.response_md|safe }}</div>
         </div>
       {% endfor %}
+    </div>
+
+    <!-- Terminal Status Indicator -->
+    <div id="terminal-indicator" class="terminal-indicator inactive" style="display: none;">
+      <span class="terminal-indicator-dot inactive"></span>
+      <span id="terminal-status-text">Claude Terminal: Not Connected</span>
+      <a href="/claude-terminal/" class="terminal-indicator-link">Manage</a>
     </div>
 
     <form class="message-form" id="message-form">
@@ -1399,5 +1479,70 @@
 
   // Load sessions on page load
   loadSessions();
+
+  // ========== Terminal Status Indicator ==========
+  const terminalIndicator = document.getElementById('terminal-indicator');
+  const terminalStatusText = document.getElementById('terminal-status-text');
+  let terminalStatusInterval = null;
+
+  async function checkTerminalStatus() {
+    try {
+      const response = await fetch('/api/terminal/status/');
+      const data = await response.json();
+
+      if (data.success && data.is_active) {
+        // Terminal is active
+        terminalIndicator.classList.remove('inactive');
+        terminalIndicator.classList.add('active');
+
+        const dot = terminalIndicator.querySelector('.terminal-indicator-dot');
+        dot.classList.remove('inactive');
+        dot.classList.add('active');
+
+        const uptime = data.uptime_seconds || 0;
+        const uptimeStr = formatUptimeShort(uptime);
+        terminalStatusText.textContent = `Claude Terminal: Connected (${data.connection_method.toUpperCase()}, ${uptimeStr})`;
+
+        // Show indicator if hidden
+        if (terminalIndicator.style.display === 'none') {
+          terminalIndicator.style.display = 'flex';
+        }
+      } else {
+        // Terminal is not active
+        terminalIndicator.classList.remove('active');
+        terminalIndicator.classList.add('inactive');
+
+        const dot = terminalIndicator.querySelector('.terminal-indicator-dot');
+        dot.classList.remove('active');
+        dot.classList.add('inactive');
+
+        terminalStatusText.textContent = 'Claude Terminal: Not Connected';
+
+        // Show indicator
+        if (terminalIndicator.style.display === 'none') {
+          terminalIndicator.style.display = 'flex';
+        }
+      }
+    } catch (error) {
+      console.error('Error checking terminal status:', error);
+    }
+  }
+
+  function formatUptimeShort(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    return `${Math.floor(seconds / 3600)}h`;
+  }
+
+  // Check terminal status initially
+  checkTerminalStatus();
+
+  // Check terminal status every 30 seconds
+  terminalStatusInterval = setInterval(checkTerminalStatus, 30000);
+
+  // Clean up on page unload
+  window.addEventListener('beforeunload', () => {
+    if (terminalStatusInterval) clearInterval(terminalStatusInterval);
+  });
 </script>
 {% endblock %}

@@ -45,4 +45,11 @@ urlpatterns = [
     path('api/analytics/metrics/', views.api_productivity_metrics, name='api_productivity_metrics'),
     path('api/analytics/insights/', views.api_task_insights, name='api_task_insights'),
     path('api/analytics/weekly-report/', views.api_weekly_report, name='api_weekly_report'),
+
+    # Claude Terminal endpoints (Phase 1)
+    path('claude-terminal/', views.claude_terminal, name='claude_terminal'),
+    path('api/terminal/start/', views.api_terminal_start, name='api_terminal_start'),
+    path('api/terminal/stop/', views.api_terminal_stop, name='api_terminal_stop'),
+    path('api/terminal/status/', views.api_terminal_status, name='api_terminal_status'),
+    path('api/terminal/message/', views.api_terminal_message, name='api_terminal_message'),
 ]

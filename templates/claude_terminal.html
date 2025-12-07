@@ -1,0 +1,803 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Claude Terminal - Django Chatbot{% endblock %}
+
+{% block styles %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap');
+    .terminal-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .terminal-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    .terminal-header h1 {
+        margin: 0;
+        font-size: 2.5rem;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .terminal-icon {
+        font-size: 3rem;
+    }
+
+    .terminal-header p {
+        margin: 10px 0 0 0;
+        opacity: 0.9;
+        font-size: 1.1rem;
+    }
+
+    .terminal-status {
+        display: flex;
+        gap: 20px;
+        margin-top: 20px;
+        flex-wrap: wrap;
+    }
+
+    .status-badge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 20px;
+        font-size: 0.95rem;
+    }
+
+    .status-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+    }
+
+    .status-dot.active {
+        background: #4CAF50;
+    }
+
+    .status-dot.inactive {
+        background: #f44336;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .content-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 25px;
+        margin-bottom: 30px;
+    }
+
+    @media (max-width: 1024px) {
+        .content-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .card {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+    }
+
+    .card:hover {
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    .card h2 {
+        margin: 0 0 20px 0;
+        font-size: 1.5rem;
+        color: #333;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .card-icon {
+        font-size: 1.8rem;
+    }
+
+    .control-section {
+        margin-bottom: 25px;
+    }
+
+    .control-section h3 {
+        font-size: 1.1rem;
+        color: #555;
+        margin: 0 0 15px 0;
+    }
+
+    .connection-method {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+    }
+
+    .method-btn {
+        flex: 1;
+        min-width: 100px;
+        padding: 10px 15px;
+        border: 2px solid #ddd;
+        background: white;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+
+    .method-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+    }
+
+    .method-btn.active {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+
+    .btn {
+        flex: 1;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 1rem;
+    }
+
+    .btn-primary {
+        background: #667eea;
+        color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background: #5568d3;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-danger {
+        background: #f44336;
+        color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+        background: #da190b;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .status-info {
+        background: #f5f5f5;
+        border-left: 4px solid #667eea;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 15px;
+        font-size: 0.95rem;
+    }
+
+    .status-info dt {
+        color: #555;
+        font-weight: 600;
+        margin-top: 10px;
+    }
+
+    .status-info dt:first-child {
+        margin-top: 0;
+    }
+
+    .status-info dd {
+        color: #777;
+        margin: 5px 0 0 0;
+        padding-left: 0;
+    }
+
+    .message-area {
+        display: flex;
+        flex-direction: column;
+        height: 400px;
+        gap: 15px;
+    }
+
+    .message-log {
+        flex: 1;
+        background: #1e1e1e;
+        color: #0f0;
+        border-radius: 8px;
+        padding: 15px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+        overflow-y: auto;
+        border: 1px solid #333;
+    }
+
+    .log-entry {
+        margin: 5px 0;
+        opacity: 0.9;
+    }
+
+    .log-entry.error {
+        color: #ff4444;
+    }
+
+    .log-entry.success {
+        color: #44ff44;
+    }
+
+    .log-entry.info {
+        color: #4488ff;
+    }
+
+    .log-entry.warning {
+        color: #ffaa44;
+    }
+
+    .message-input {
+        display: flex;
+        gap: 10px;
+    }
+
+    .message-input input {
+        flex: 1;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+
+    .message-input button {
+        padding: 12px 20px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .message-input button:hover {
+        background: #5568d3;
+    }
+
+    .session-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .session-item {
+        padding: 12px;
+        margin: 8px 0;
+        background: #f9f9f9;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .session-item:hover {
+        background: #f0f0f0;
+        border-color: #667eea;
+    }
+
+    .session-item.active {
+        background: #e8eaf6;
+        border-color: #667eea;
+        font-weight: 600;
+    }
+
+    .error-message {
+        background: #ffebee;
+        color: #c62828;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 15px;
+        display: none;
+    }
+
+    .error-message.show {
+        display: block;
+    }
+
+    .success-message {
+        background: #e8f5e9;
+        color: #2e7d32;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 15px;
+        display: none;
+    }
+
+    .success-message.show {
+        display: block;
+    }
+
+    .loading {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid #667eea;
+        border-top: 2px solid transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 8px;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .port-input {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .port-input input {
+        width: 80px;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="terminal-container">
+    <!-- Header -->
+    <div class="terminal-header">
+        <h1>
+            <span class="terminal-icon">⌨️</span>
+            Claude Terminal Integration
+        </h1>
+        <p>Manage your Claude Code terminal instance and communicate with AI</p>
+
+        <div class="terminal-status">
+            <div class="status-badge">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Checking status...</span>
+            </div>
+            <div class="status-badge">
+                Connection: <span id="methodText">—</span>
+            </div>
+            <div class="status-badge">
+                Uptime: <span id="uptimeText">—</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="content-grid">
+        <!-- Terminal Control Panel -->
+        <div class="card">
+            <h2>
+                <span class="card-icon">🚀</span>
+                Terminal Control
+            </h2>
+
+            <div class="control-section">
+                <h3>Connection Method</h3>
+                <div class="connection-method">
+                    <button class="method-btn active" data-method="http">HTTP</button>
+                    <button class="method-btn" data-method="ipc">IPC</button>
+                    <button class="method-btn" data-method="file">File Queue</button>
+                </div>
+                <div class="port-input">
+                    <label for="portInput">Port (HTTP):</label>
+                    <input type="number" id="portInput" value="5000" min="1024" max="65535">
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Actions</h3>
+                <div class="button-group">
+                    <button class="btn btn-primary" id="startBtn">
+                        <span class="loading" style="display: none;"></span>
+                        Start Terminal
+                    </button>
+                    <button class="btn btn-danger" id="stopBtn" disabled>Stop Terminal</button>
+                </div>
+            </div>
+
+            <div class="status-info">
+                <dl>
+                    <dt>Status:</dt>
+                    <dd id="statusDetail">Disconnected</dd>
+
+                    <dt>Connection:</dt>
+                    <dd id="connectionDetail">Not connected</dd>
+
+                    <dt>Started At:</dt>
+                    <dd id="startedAtDetail">—</dd>
+
+                    <dt>Uptime:</dt>
+                    <dd id="uptimeDetail">—</dd>
+
+                    <dt>Health:</dt>
+                    <dd id="healthDetail">Unknown</dd>
+
+                    <dt>Last Error:</dt>
+                    <dd id="lastErrorDetail" style="color: #c62828;">—</dd>
+
+                    <dt>Error Count:</dt>
+                    <dd id="errorCountDetail">0</dd>
+                </dl>
+            </div>
+
+            <div class="error-message" id="errorMsg"></div>
+            <div class="success-message" id="successMsg"></div>
+        </div>
+
+        <!-- Message Communication -->
+        <div class="card">
+            <h2>
+                <span class="card-icon">💬</span>
+                Terminal Communication
+            </h2>
+
+            <div class="message-area">
+                <div class="message-log" id="messageLog">
+                    <div class="log-entry info">Terminal message log will appear here...</div>
+                </div>
+
+                <div class="message-input">
+                    <input
+                        type="text"
+                        id="messageInput"
+                        placeholder="Enter message to send to Claude terminal..."
+                        disabled
+                    >
+                    <button id="sendBtn" disabled>Send</button>
+                </div>
+            </div>
+
+            <div style="margin-top: 15px; font-size: 0.85rem; color: #888;">
+                <strong>Note:</strong> Terminal must be started before sending messages.
+                Messages are sent to the active Claude Code process via {{ terminal_session.connection_method|upper }}.
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Sessions -->
+    {% if chat_sessions %}
+    <div class="card">
+        <h2>
+            <span class="card-icon">📝</span>
+            Available Chat Sessions
+        </h2>
+
+        <p style="color: #777; margin-top: 0;">Select a session to link with terminal communications (optional)</p>
+
+        <ul class="session-list">
+            {% for session in chat_sessions %}
+            <li class="session-item" data-session-id="{{ session.id }}">
+                <strong>{{ session.name }}</strong>
+                <br>
+                <span style="font-size: 0.85rem; color: #999;">
+                    {{ session.model }} • Updated {{ session.updated_at|timesince }} ago
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // State management
+    let currentMethod = 'http';
+    let selectedSessionId = null;
+    let statusCheckInterval = null;
+    let statusUpdateInterval = null;
+
+    // DOM elements (will be set after DOMContentLoaded)
+    let startBtn, stopBtn, sendBtn, messageInput, messageLog, methodBtns, portInput, errorMsg, successMsg;
+
+    // Initialize when DOM is ready
+    function initializeEventListeners() {
+        // Get DOM elements
+        startBtn = document.getElementById('startBtn');
+        stopBtn = document.getElementById('stopBtn');
+        sendBtn = document.getElementById('sendBtn');
+        messageInput = document.getElementById('messageInput');
+        messageLog = document.getElementById('messageLog');
+        methodBtns = document.querySelectorAll('.method-btn');
+        portInput = document.getElementById('portInput');
+        errorMsg = document.getElementById('errorMsg');
+        successMsg = document.getElementById('successMsg');
+
+        // Check if elements exist before adding listeners
+        if (!startBtn || !stopBtn || !sendBtn || !messageInput) {
+            console.error('Required DOM elements not found');
+            return;
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', handleStart);
+        stopBtn.addEventListener('click', handleStop);
+        sendBtn.addEventListener('click', handleSendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSendMessage();
+        });
+
+        methodBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                methodBtns.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentMethod = e.target.dataset.method;
+            });
+        });
+
+        // Session selection
+        document.querySelectorAll('.session-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.session-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                selectedSessionId = item.dataset.sessionId;
+                addLog(`Session ${selectedSessionId} selected`, 'info');
+            });
+        });
+    }
+
+    // Functions
+    async function handleStart() {
+        showError('');
+        showSuccess('');
+        setLoading(startBtn, true);
+
+        try {
+            const port = currentMethod === 'http' ? portInput.value : '5000';
+
+            const formData = new FormData();
+            formData.append('connection_method', currentMethod);
+            formData.append('port', port);
+            formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+            const response = await fetch('/api/terminal/start/', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                addLog(`Connected via ${currentMethod.toUpperCase()}`, 'success');
+                showSuccess(`Terminal started successfully via ${data.method.toUpperCase()}`);
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                updateStatus();
+                startStatusPolling();
+            } else {
+                addLog(`Connection failed: ${data.error}`, 'error');
+                showError(data.error);
+            }
+        } catch (error) {
+            addLog(`Error: ${error.message}`, 'error');
+            showError(error.message);
+        } finally {
+            setLoading(startBtn, false);
+        }
+    }
+
+    async function handleStop() {
+        showError('');
+        showSuccess('');
+        setLoading(stopBtn, true);
+
+        try {
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+            const response = await fetch('/api/terminal/stop/', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                addLog('Terminal stopped', 'warning');
+                showSuccess('Terminal stopped successfully');
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                messageInput.disabled = true;
+                sendBtn.disabled = true;
+                stopStatusPolling();
+                updateStatus();
+            } else {
+                addLog(`Stop failed: ${data.error}`, 'error');
+                showError(data.error);
+            }
+        } catch (error) {
+            addLog(`Error: ${error.message}`, 'error');
+            showError(error.message);
+        } finally {
+            setLoading(stopBtn, false);
+        }
+    }
+
+    async function handleSendMessage() {
+        const message = messageInput.value.trim();
+
+        if (!message) {
+            showError('Please enter a message');
+            return;
+        }
+
+        showError('');
+        showSuccess('');
+        setLoading(sendBtn, true);
+
+        try {
+            const formData = new FormData();
+            formData.append('message', message);
+            if (selectedSessionId) {
+                formData.append('session_id', selectedSessionId);
+            }
+            formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+            const response = await fetch('/api/terminal/message/', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                addLog(`[You]: ${message}`, 'info');
+                addLog(`[Claude]: ${data.response}`, 'success');
+                messageInput.value = '';
+                showSuccess('Message sent successfully');
+            } else {
+                addLog(`Error: ${data.error}`, 'error');
+                showError(data.error);
+            }
+        } catch (error) {
+            addLog(`Error: ${error.message}`, 'error');
+            showError(error.message);
+        } finally {
+            setLoading(sendBtn, false);
+        }
+    }
+
+    async function updateStatus() {
+        try {
+            const response = await fetch('/api/terminal/status/');
+            const data = await response.json();
+
+            if (data.success) {
+                const isActive = data.is_active;
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+
+                statusDot.classList.remove('active', 'inactive');
+                statusDot.classList.add(isActive ? 'active' : 'inactive');
+                statusText.textContent = isActive ? 'Active' : 'Inactive';
+
+                document.getElementById('methodText').textContent = data.connection_method.toUpperCase();
+                document.getElementById('statusDetail').textContent = isActive ? 'Connected' : 'Disconnected';
+                document.getElementById('connectionDetail').textContent = data.is_connected ? 'Yes' : 'No';
+                document.getElementById('healthDetail').textContent = data.is_healthy ? 'Healthy' : 'Unhealthy';
+                document.getElementById('errorCountDetail').textContent = data.error_count;
+
+                if (data.last_error) {
+                    document.getElementById('lastErrorDetail').textContent = data.last_error;
+                } else {
+                    document.getElementById('lastErrorDetail').textContent = '—';
+                }
+
+                if (data.uptime_seconds !== null) {
+                    const uptime = formatUptime(data.uptime_seconds);
+                    document.getElementById('uptimeText').textContent = uptime;
+                    document.getElementById('uptimeDetail').textContent = uptime;
+                }
+            }
+        } catch (error) {
+            console.error('Status update error:', error);
+        }
+    }
+
+    function startStatusPolling() {
+        if (statusCheckInterval) clearInterval(statusCheckInterval);
+        statusCheckInterval = setInterval(updateStatus, 5000); // Update every 5 seconds
+        updateStatus(); // Initial update
+    }
+
+    function stopStatusPolling() {
+        if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+            statusCheckInterval = null;
+        }
+    }
+
+    function addLog(message, type = 'info') {
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${type}`;
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        messageLog.appendChild(entry);
+        messageLog.scrollTop = messageLog.scrollHeight;
+    }
+
+    function setLoading(button, loading) {
+        const spinner = button.querySelector('.loading');
+        if (loading) {
+            spinner.style.display = 'inline-block';
+            button.disabled = true;
+        } else {
+            spinner.style.display = 'none';
+            button.disabled = false;
+        }
+    }
+
+    function showError(message) {
+        if (message) {
+            errorMsg.textContent = message;
+            errorMsg.classList.add('show');
+        } else {
+            errorMsg.classList.remove('show');
+        }
+    }
+
+    function showSuccess(message) {
+        if (message) {
+            successMsg.textContent = message;
+            successMsg.classList.add('show');
+        } else {
+            successMsg.classList.remove('show');
+        }
+    }
+
+    function formatUptime(seconds) {
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+    }
+
+    // Initial setup
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeEventListeners();
+        addLog('Terminal interface loaded', 'info');
+        updateStatus();
+    });
+</script>
+{% endblock %}

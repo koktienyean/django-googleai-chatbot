@@ -10,7 +10,7 @@ from .models import (
     Chat, ChatSession, Task,
     Notification, NotificationPreference,
     RecurringTaskTemplate, RecurringTaskInstance,
-    TaskAnalytics, ChatAnalytics
+    TaskAnalytics, ChatAnalytics, ClaudeTerminalSession
 )
 from .message_queue import message_processor
 
@@ -1905,3 +1905,248 @@ def register(request):
 def logout(request):
     auth.logout(request)
     return redirect('login')
+
+
+# ========== CLAUDE TERMINAL VIEWS (PHASE 1) ==========
+
+@login_required
+def claude_terminal(request):
+    """Display Claude terminal management page"""
+    user = request.user
+
+    try:
+        # Get or create terminal session for current user
+        terminal_session, created = ClaudeTerminalSession.objects.get_or_create(
+            user=user,
+            defaults={
+                'connection_method': 'http',
+                'connection_config': {'port': 5000}
+            }
+        )
+    except Exception as e:
+        terminal_session = None
+        error = str(e)
+
+    # Get list of chat sessions for linking
+    chat_sessions = ChatSession.objects.filter(user=user).order_by('-created_at')[:10]
+
+    context = {
+        'terminal_session': terminal_session,
+        'chat_sessions': chat_sessions,
+    }
+
+    return render(request, 'claude_terminal.html', context)
+
+
+@login_required
+def api_terminal_start(request):
+    """API endpoint to start Claude terminal process"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=400)
+
+    user = request.user
+
+    try:
+        terminal_session = ClaudeTerminalSession.objects.get(user=user)
+    except ClaudeTerminalSession.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Terminal session not found'}, status=404)
+
+    try:
+        # Import here to avoid circular imports
+        from .claude_terminal import get_connector
+
+        # Get connection method from request or use default
+        connection_method = request.POST.get('connection_method', 'http')
+
+        # Validate connection method
+        valid_methods = ['http', 'ipc', 'file']
+        if connection_method not in valid_methods:
+            return JsonResponse({'success': False, 'error': f'Invalid method: {connection_method}'}, status=400)
+
+        # Get connection config
+        config_port = request.POST.get('port', '5000')
+        connection_config = {
+            'port': int(config_port) if connection_method == 'http' else None
+        }
+
+        # Try to connect using the connector
+        connector = get_connector(
+            config={connection_method: connection_config},
+            timeout=10
+        )
+
+        if connector.connect():
+            # Update terminal session
+            terminal_session.is_active = True
+            terminal_session.is_enabled = True
+            terminal_session.connection_method = connection_method
+            terminal_session.connection_config = connection_config
+            terminal_session.started_at = timezone.now()
+            terminal_session.last_message_at = timezone.now()
+            terminal_session.clear_error()
+            terminal_session.save()
+
+            return JsonResponse({
+                'success': True,
+                'message': f'Connected via {connection_method}',
+                'method': connector.get_method(),
+                'is_active': True,
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': f'Failed to connect via {connection_method}. Is Claude terminal running?'
+            }, status=503)
+
+    except Exception as e:
+        logger.error(f'Terminal start error: {e}')
+        return JsonResponse({'success': False, 'error': f'Error: {str(e)}'}, status=500)
+
+
+@login_required
+def api_terminal_stop(request):
+    """API endpoint to stop Claude terminal process"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=400)
+
+    user = request.user
+
+    try:
+        terminal_session = ClaudeTerminalSession.objects.get(user=user)
+    except ClaudeTerminalSession.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Terminal session not found'}, status=404)
+
+    try:
+        # Stop the terminal
+        terminal_session.is_active = False
+        terminal_session.is_enabled = False
+        terminal_session.save()
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Terminal stopped',
+            'is_active': False,
+        })
+
+    except Exception as e:
+        logger.error(f'Terminal stop error: {e}')
+        return JsonResponse({'success': False, 'error': f'Error: {str(e)}'}, status=500)
+
+
+@login_required
+def api_terminal_status(request):
+    """API endpoint to check Claude terminal status"""
+    user = request.user
+
+    try:
+        terminal_session = ClaudeTerminalSession.objects.get(user=user)
+    except ClaudeTerminalSession.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Terminal session not found'
+        }, status=404)
+
+    try:
+        # Import connector
+        from .claude_terminal import get_connector
+
+        # Check if terminal is healthy
+        connector = get_connector(
+            config={terminal_session.connection_method: terminal_session.connection_config},
+            timeout=5
+        )
+
+        is_healthy = connector.is_healthy() if terminal_session.is_active else False
+
+        uptime = None
+        if terminal_session.started_at:
+            uptime = int((timezone.now() - terminal_session.started_at).total_seconds())
+
+        return JsonResponse({
+            'success': True,
+            'is_active': terminal_session.is_active,
+            'is_enabled': terminal_session.is_enabled,
+            'is_healthy': is_healthy,
+            'is_connected': terminal_session.is_connected,
+            'connection_method': terminal_session.connection_method,
+            'uptime_seconds': uptime,
+            'last_error': terminal_session.last_error,
+            'error_count': terminal_session.error_count,
+        })
+
+    except Exception as e:
+        logger.error(f'Terminal status check error: {e}')
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+def api_terminal_message(request):
+    """API endpoint to send message to Claude terminal and get response"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=400)
+
+    user = request.user
+    message = request.POST.get('message', '').strip()
+    session_id = request.POST.get('session_id', None)
+
+    if not message:
+        return JsonResponse({'success': False, 'error': 'Message required'}, status=400)
+
+    try:
+        terminal_session = ClaudeTerminalSession.objects.get(user=user)
+    except ClaudeTerminalSession.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Terminal session not found'}, status=404)
+
+    if not terminal_session.is_active:
+        return JsonResponse({
+            'success': False,
+            'error': 'Terminal is not active. Start it first.'
+        }, status=503)
+
+    try:
+        # Import connector
+        from .claude_terminal import get_connector
+
+        # Create connector
+        connector = get_connector(
+            config={terminal_session.connection_method: terminal_session.connection_config},
+            timeout=30
+        )
+
+        # Try to send message
+        response_text = connector.send_message(message, session_id)
+
+        if response_text is None:
+            terminal_session.mark_error('Failed to get response from terminal')
+            return JsonResponse({
+                'success': False,
+                'error': 'No response from terminal'
+            }, status=503)
+
+        # Update last message time
+        terminal_session.last_message_at = timezone.now()
+        terminal_session.clear_error()
+        terminal_session.save()
+
+        return JsonResponse({
+            'success': True,
+            'response': response_text,
+            'method': terminal_session.connection_method,
+        })
+
+    except Exception as e:
+        logger.error(f'Terminal message error: {e}')
+        terminal_session.mark_error(str(e))
+
+        return JsonResponse({
+            'success': False,
+            'error': f'Error: {str(e)}'
+        }, status=500)
+
+
+# Import logging at module level if not already imported
+import logging
+logger = logging.getLogger(__name__)
