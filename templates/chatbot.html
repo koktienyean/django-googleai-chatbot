@@ -380,6 +380,53 @@
     border: 1px solid var(--border-primary);
   }
 
+  /* Model Selector */
+  .model-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .model-selector label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .model-selector select {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-primary);
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--color-primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-family: var(--font-body);
+  }
+
+  .model-selector select:hover {
+    background: rgba(0, 217, 255, 0.15);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 8px rgba(0, 217, 255, 0.2);
+  }
+
+  .model-selector select:focus {
+    outline: none;
+    background: rgba(0, 217, 255, 0.15);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 12px rgba(0, 217, 255, 0.3);
+  }
+
+  .model-selector select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+  }
+
   .messages-box {
     flex: 1;
     overflow-y: auto;
@@ -887,7 +934,22 @@
         <input type="text" id="title-edit-input" class="title-edit-input" style="display: none;" />
         <span id="title-edit-icon" class="title-edit-icon" title="Edit title">✏️</span>
       </div>
-      <span class="model-badge" id="model-badge">{{ session.model }}</span>
+      <div class="model-selector">
+        <label for="model-select">AI Model:</label>
+        <select id="model-select">
+          <optgroup label="Claude (Anthropic)">
+            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+            <option value="claude-3-opus-20250219">Claude 3 Opus</option>
+            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+          </optgroup>
+          <optgroup label="Gemini (Google)">
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <option value="gemini-pro">Gemini Pro</option>
+          </optgroup>
+        </select>
+      </div>
     </div>
 
     <div class="messages-box" id="messages-box">
@@ -918,6 +980,23 @@
   const btnSend = document.getElementById('btn-send');
   const newChatBtn = document.getElementById('new-chat-btn');
   const sessionsContainer = document.getElementById('sessions-container');
+  const modelSelect = document.getElementById('model-select');
+
+  // Set the model selector to the current session's model (default to Claude 3.5 Sonnet)
+  let currentModel = 'claude-3-5-sonnet-20241022';
+  if ('{{ session.model }}' && modelSelect.querySelector(`option[value="{{ session.model }}"]`)) {
+    currentModel = '{{ session.model }}';
+    modelSelect.value = currentModel;
+  } else {
+    modelSelect.value = currentModel;
+  }
+
+  // Handle model selection change
+  modelSelect.addEventListener('change', (e) => {
+    currentModel = e.target.value;
+    // Update the model in the display
+    console.log('Model changed to:', currentModel);
+  });
 
   // Auto-resize textarea
   messageInput.addEventListener('input', () => {
@@ -1092,6 +1171,7 @@
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           'message': message,
+          'model': currentModel,
           'csrfmiddlewaretoken': document.querySelector('[name=csrfmiddlewaretoken]').value
         })
       });

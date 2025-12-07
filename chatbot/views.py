@@ -19,16 +19,418 @@ from django.contrib.auth.decorators import login_required
 from dotenv import load_dotenv
 load_dotenv()
 
+import anthropic
 import google.generativeai as genai
 
 # Load environment variables from .env file
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 API_SECRET_KEY = os.getenv('API_SECRET_KEY')
 
-genai.configure(api_key=API_SECRET_KEY)
+# Initialize Anthropic client
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+# Initialize Gemini (Generative AI)
+if API_SECRET_KEY:
+    genai.configure(api_key=API_SECRET_KEY)
 
 
-def ask_gemini(message, model='gemini-2.0-flash', user=None):
-    """Call Gemini API and return response text
+def ask_ai(message, model='claude-3-5-sonnet-20241022', user=None):
+    """Smart router that uses Claude API or Gemini API based on model parameter
+
+    Claude models: claude-3-5-sonnet-20241022, claude-3-opus-20250219, etc.
+    Gemini models: gemini-2.0-flash, gemini-1.5-flash, gemini-pro, etc.
+    """
+    # Determine which API to use based on model name
+    if model.startswith('claude'):
+        return ask_claude(message, model, user)
+    elif model.startswith('gemini') or model.startswith('gpt'):
+        return ask_gemini_api(message, model, user)
+    else:
+        # Default to Claude for unknown models
+        return ask_claude(message, model, user)
+
+
+def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None):
+    """Call Claude API and return response text
+
+    Supports function calling to query user's Django data via:
+    - search_my_chats(keyword, limit)
+    - get_chat_statistics()
+    - get_recent_conversations(limit)
+    - search_by_date_range(start_date, end_date)
+    - get_session_summary(session_id)
+    - list_my_sessions(limit)
+    """
+    try:
+        # Define tools that expose Django data to Claude
+        tools = []
+        if user:
+            # Chat history tools
+            tools.extend([
+                {
+                    "name": "search_chats_tool",
+                    "description": "Search through user's chat history by keyword",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "keyword": {"type": "string"},
+                            "limit": {"type": "integer", "default": 5}
+                        },
+                        "required": ["keyword"]
+                    }
+                },
+                {
+                    "name": "get_stats_tool",
+                    "description": "Get user's chat usage statistics",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "get_recent_tool",
+                    "description": "Get user's recent conversations",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {"type": "integer", "default": 5}
+                        }
+                    }
+                },
+                {
+                    "name": "search_dates_tool",
+                    "description": "Search chats within a date range (YYYY-MM-DD format)",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"}
+                        },
+                        "required": ["start_date", "end_date"]
+                    }
+                },
+                {
+                    "name": "get_session_tool",
+                    "description": "Get detailed summary of a specific chat session",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "integer"}
+                        },
+                        "required": ["session_id"]
+                    }
+                },
+                {
+                    "name": "list_sessions_tool",
+                    "description": "List all user's chat sessions",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {"type": "integer", "default": 10}
+                        }
+                    }
+                },
+                # Task management tools
+                {
+                    "name": "create_task_tool",
+                    "description": "Create a new task for the user",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string", "default": ""},
+                            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"], "default": "medium"},
+                            "due_date_str": {"type": "string"}
+                        },
+                        "required": ["title"]
+                    }
+                },
+                {
+                    "name": "list_tasks_tool",
+                    "description": "List user's tasks",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": {"type": "string", "enum": ["all", "pending", "in_progress", "completed", "cancelled"], "default": "all"},
+                            "limit": {"type": "integer", "default": 10}
+                        }
+                    }
+                },
+                {
+                    "name": "get_task_details_tool",
+                    "description": "Get complete details of a specific task by task ID",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "task_id": {"type": "integer"}
+                        },
+                        "required": ["task_id"]
+                    }
+                },
+                {
+                    "name": "update_task_status_tool",
+                    "description": "Change task status",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "task_id": {"type": "integer"},
+                            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]}
+                        },
+                        "required": ["task_id", "status"]
+                    }
+                },
+                {
+                    "name": "update_task_priority_tool",
+                    "description": "Change task priority",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "task_id": {"type": "integer"},
+                            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]}
+                        },
+                        "required": ["task_id", "priority"]
+                    }
+                },
+                {
+                    "name": "delete_task_tool",
+                    "description": "Delete a task permanently from the system",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "task_id": {"type": "integer"}
+                        },
+                        "required": ["task_id"]
+                    }
+                },
+                {
+                    "name": "get_pending_tasks_tool",
+                    "description": "Get user's urgent and high priority pending tasks",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {"type": "integer", "default": 5}
+                        }
+                    }
+                },
+                {
+                    "name": "get_task_summary_tool",
+                    "description": "Get summary counts of all tasks grouped by status",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                # Recurring tasks and notifications
+                {
+                    "name": "create_recurring_task_tool_wrapper",
+                    "description": "Create a recurring task",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string", "default": ""},
+                            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"], "default": "medium"},
+                            "frequency": {"type": "string", "enum": ["daily", "weekly", "biweekly", "monthly", "quarterly", "yearly"], "default": "weekly"}
+                        },
+                        "required": ["title", "frequency"]
+                    }
+                },
+                {
+                    "name": "list_recurring_tasks_tool_wrapper",
+                    "description": "List all recurring task templates",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "skip_recurring_instance_tool_wrapper",
+                    "description": "Skip next instance of a recurring task",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "template_id": {"type": "integer"}
+                        },
+                        "required": ["template_id"]
+                    }
+                },
+                {
+                    "name": "get_notification_summary_tool_wrapper",
+                    "description": "Get notification summary and recent notifications",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "set_notification_preference_tool_wrapper",
+                    "description": "Update notification preferences",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "preference_type": {"type": "string", "enum": ["deadline_reminder", "overdue_reminder", "daily_digest"]},
+                            "enabled": {"type": "boolean"}
+                        },
+                        "required": ["preference_type", "enabled"]
+                    }
+                },
+                # Analytics
+                {
+                    "name": "get_productivity_metrics_tool_wrapper",
+                    "description": "Get productivity metrics",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "get_task_insights_tool_wrapper",
+                    "description": "Get AI-powered insights about task performance",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "generate_weekly_report_tool_wrapper",
+                    "description": "Generate a weekly productivity report",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                }
+            ])
+
+        system_instruction = """You are a helpful AI assistant with access to tools for managing tasks and querying chat history.
+
+When the user asks you to:
+- Create a task: Use create_task_tool directly without asking for confirmation
+- List/show tasks: Use list_tasks_tool or get_task_summary_tool directly
+- Update task status/priority: Use the respective update tools directly
+- Search chats: Use search_chats_tool directly
+- Get statistics: Use get_stats_tool directly
+
+IMPORTANT: Call the appropriate tool IMMEDIATELY when the user requests these actions. Do not ask for confirmation - just call the function and show the result.
+
+For task priorities, accept any reasonable input and normalize to: low, medium, high, or urgent
+For task status, accept any reasonable input and normalize to: pending, in_progress, completed, or cancelled
+
+Always call the tool first, then provide a friendly response about what was done."""
+
+        messages = [{"role": "user", "content": message}]
+
+        # Call Claude API with tools
+        response = client.messages.create(
+            model=model,
+            max_tokens=2048,
+            system=system_instruction,
+            tools=tools if tools else None,
+            messages=messages
+        )
+
+        # Handle tool use in responses
+        while response.stop_reason == "tool_use":
+            # Find the tool use block
+            tool_use_block = None
+            for block in response.content:
+                if block.type == "tool_use":
+                    tool_use_block = block
+                    break
+
+            if not tool_use_block:
+                break
+
+            function_name = tool_use_block.name
+            function_args = tool_use_block.input
+
+            # Call the appropriate function
+            result = None
+            if function_name == 'search_chats_tool':
+                result = search_my_chats(user, function_args.get('keyword'), function_args.get('limit', 5))
+            elif function_name == 'get_stats_tool':
+                result = get_chat_statistics(user)
+            elif function_name == 'get_recent_tool':
+                result = get_recent_conversations(user, function_args.get('limit', 5))
+            elif function_name == 'search_dates_tool':
+                result = search_by_date_range(user, function_args.get('start_date'), function_args.get('end_date'))
+            elif function_name == 'get_session_tool':
+                result = get_session_summary(user, function_args.get('session_id'))
+            elif function_name == 'list_sessions_tool':
+                result = list_my_sessions(user, function_args.get('limit', 10))
+            elif function_name == 'create_task_tool':
+                result = create_task(user, function_args.get('title'), function_args.get('description', ''),
+                                   function_args.get('priority', 'medium'), function_args.get('due_date_str'))
+            elif function_name == 'list_tasks_tool':
+                result = list_my_tasks(user, function_args.get('status', 'all'), function_args.get('limit', 10))
+            elif function_name == 'get_task_details_tool':
+                result = get_task_details(user, function_args.get('task_id'))
+            elif function_name == 'update_task_status_tool':
+                result = update_task_status(user, function_args.get('task_id'), function_args.get('status'))
+            elif function_name == 'update_task_priority_tool':
+                result = update_task_priority(user, function_args.get('task_id'), function_args.get('priority'))
+            elif function_name == 'delete_task_tool':
+                result = delete_task(user, function_args.get('task_id'))
+            elif function_name == 'get_pending_tasks_tool':
+                result = get_pending_tasks(user, function_args.get('limit', 5))
+            elif function_name == 'get_task_summary_tool':
+                result = get_task_summary(user)
+            elif function_name == 'create_recurring_task_tool_wrapper':
+                result = create_recurring_task_tool(user, function_args.get('title'), function_args.get('description', ''),
+                                                  function_args.get('priority', 'medium'), function_args.get('frequency', 'weekly'),
+                                                  function_args.get('start_date_str'), function_args.get('end_date_str'))
+            elif function_name == 'list_recurring_tasks_tool_wrapper':
+                result = list_recurring_tasks_tool(user)
+            elif function_name == 'skip_recurring_instance_tool_wrapper':
+                result = skip_recurring_instance_tool(user, function_args.get('template_id'))
+            elif function_name == 'get_notification_summary_tool_wrapper':
+                result = get_notification_summary_tool(user)
+            elif function_name == 'set_notification_preference_tool_wrapper':
+                result = set_notification_preference_tool(user, function_args.get('preference_type'), function_args.get('enabled'))
+            elif function_name == 'get_productivity_metrics_tool_wrapper':
+                result = get_productivity_metrics_tool(user)
+            elif function_name == 'get_task_insights_tool_wrapper':
+                result = get_task_insights_tool(user)
+            elif function_name == 'generate_weekly_report_tool_wrapper':
+                result = generate_weekly_report_tool(user)
+            else:
+                result = {'error': f'Unknown function: {function_name}'}
+
+            # Continue the conversation with the tool result
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_block.id,
+                        "content": str(result)
+                    }
+                ]
+            })
+
+            # Get next response
+            response = client.messages.create(
+                model=model,
+                max_tokens=2048,
+                system=system_instruction,
+                tools=tools if tools else None,
+                messages=messages
+            )
+
+        # Extract text from response
+        text_content = ""
+        for block in response.content:
+            if hasattr(block, 'text'):
+                text_content += block.text
+
+        return text_content if text_content else "No response generated"
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def ask_gemini_api(message, model='gemini-2.0-flash', user=None):
+    """Call Gemini (Google Generative AI) API and return response text
 
     Supports function calling to query user's Django data via:
     - search_my_chats(keyword, limit)
@@ -275,6 +677,11 @@ Always call the tool first, then provide a friendly response about what was done
         return response.text
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+def ask_gemini(message, model='claude-3-5-sonnet-20241022', user=None):
+    """Legacy wrapper that now calls ask_ai() - supports both Claude and Gemini"""
+    return ask_ai(message, model, user)
 
 
 def ask_openai(request, message, model='gemini-1.5-flash'):
@@ -1213,7 +1620,9 @@ def chatbot_session(request, session_id):
 
     if request.method == 'POST':
         message = request.POST.get('message')
-        response = ask_gemini(message, session.model, user=request.user)
+        # Use model from request if provided, otherwise use session's default model
+        model = request.POST.get('model', session.model)
+        response = ask_ai(message, model, user=request.user)
 
         chat = Chat.objects.create(
             session=session,
@@ -1257,7 +1666,7 @@ def api_session_create(request):
         return JsonResponse({'error': 'POST required'}, status=400)
 
     name = request.POST.get('name', 'New Chat')
-    model = request.POST.get('model', 'gemini-2.0-flash')
+    model = request.POST.get('model', 'claude-3-5-sonnet-20241022')
 
     session = ChatSession.objects.create(
         user=request.user,
@@ -1387,11 +1796,24 @@ def api_save_settings(request):
 
     model_name = request.POST.get('model')
 
-    # Validate model exists
-    try:
-        genai.GenerativeModel(model_name)
-    except Exception as e:
-        return JsonResponse({'error': f'Invalid model: {str(e)}'}, status=400)
+    if not model_name:
+        return JsonResponse({'error': 'Model name required'}, status=400)
+
+    # Validate model - support both Claude and Gemini
+    valid_models = [
+        # Claude models
+        'claude-3-5-sonnet-20241022',
+        'claude-3-opus-20250219',
+        'claude-3-haiku-20240307',
+        # Gemini models
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-pro',
+    ]
+
+    if model_name not in valid_models:
+        return JsonResponse({'error': f'Invalid model: {model_name}'}, status=400)
 
     # Get or create current session and update model
     session = ChatSession.objects.filter(
