@@ -385,9 +385,19 @@
     <div class="form-group">
       <label for="model-select">Choose Model</label>
       <select id="model-select" class="model-select">
-        <option value="">Loading available models...</option>
+        <optgroup label="Claude (Anthropic) - Subscription Required">
+          <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
+          <option value="claude-3-opus-20250219">Claude 3 Opus (Most Capable)</option>
+          <option value="claude-3-haiku-20240307">Claude 3 Haiku (Fast & Efficient)</option>
+        </optgroup>
+        <optgroup label="Gemini (Google)">
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+          <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+          <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+          <option value="gemini-pro">Gemini Pro</option>
+        </optgroup>
       </select>
-      <small>Select which Gemini model to use for new conversations</small>
+      <small>Select the AI model to use as default for new conversations. You can also change it per-conversation from the chat interface.</small>
     </div>
 
     <div class="model-info" id="model-info">
@@ -406,8 +416,17 @@
   <div class="settings-section">
     <h2>About</h2>
     <p style="margin: 0; color: #6c757d; font-size: 14px;">
-      Gemini Chatbot v1.0<br>
-      Powered by Google's Generative AI API<br>
+      AI Chatbot v2.0 - Dual API Support<br>
+      <strong>Powered by:</strong> Claude (Anthropic) & Gemini (Google)<br>
+      <br>
+      <strong>Features:</strong>
+      <ul style="margin: 12px 0 0 20px; padding: 0; color: #6c757d; font-size: 13px;">
+        <li>Chat with multiple AI models</li>
+        <li>Switch models per conversation</li>
+        <li>Task management and productivity tools</li>
+        <li>Calendar and data visualization</li>
+        <li>Email notifications and recurring tasks</li>
+      </ul>
       <br>
       <strong>Current User:</strong> {{ user.username }}
     </p>
@@ -421,34 +440,36 @@
   const statusMsg = document.getElementById('status-message');
   const modelInfo = document.getElementById('model-info');
 
-  // Fetch and populate models on page load
-  async function loadModels() {
-    try {
-      const response = await fetch('/api/models/');
-      const data = await response.json();
+  // Model descriptions
+  const modelDescriptions = {
+    'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet - Balanced performance and cost. Great for most tasks.',
+    'claude-3-opus-20250219': 'Claude 3 Opus - Most capable model. Best for complex reasoning and analysis.',
+    'claude-3-haiku-20240307': 'Claude 3 Haiku - Fast and efficient. Best for quick responses and simple tasks.',
+    'gemini-2.0-flash': 'Gemini 2.0 Flash - Latest fast model with excellent performance.',
+    'gemini-1.5-flash': 'Gemini 1.5 Flash - Fast and reliable for most conversations.',
+    'gemini-1.5-pro': 'Gemini 1.5 Pro - More capable for complex tasks.',
+    'gemini-pro': 'Gemini Pro - Reliable and accurate model.'
+  };
 
-      if (data.error) {
-        showStatus('Error loading models: ' + data.error, 'error');
-        return;
-      }
-
-      modelSelect.innerHTML = '';
-      data.models.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.name;
-        option.textContent = model.display;
-        modelSelect.appendChild(option);
-      });
-
-      // Set current selection if available
-      const savedModel = localStorage.getItem('selectedModel');
-      if (savedModel) {
-        modelSelect.value = savedModel;
-      }
-    } catch (error) {
-      showStatus('Error fetching models: ' + error.message, 'error');
+  // Set up model selection
+  function initializeSettings() {
+    // Set current selection from localStorage or default to Claude 3.5 Sonnet
+    const savedModel = localStorage.getItem('selectedModel') || 'claude-3-5-sonnet-20241022';
+    if (modelSelect.querySelector(`option[value="${savedModel}"]`)) {
+      modelSelect.value = savedModel;
+      updateModelDescription();
     }
   }
+
+  // Update model description when selection changes
+  function updateModelDescription() {
+    const selectedModel = modelSelect.value;
+    const description = modelDescriptions[selectedModel] || 'No description available';
+    document.getElementById('model-description').textContent = description;
+    modelInfo.classList.add('show');
+  }
+
+  modelSelect.addEventListener('change', updateModelDescription);
 
   // Test model connection
   testBtn.addEventListener('click', async () => {
@@ -548,7 +569,7 @@
     return cookieValue;
   }
 
-  // Load models when page loads
-  document.addEventListener('DOMContentLoaded', loadModels);
+  // Initialize settings when page loads
+  document.addEventListener('DOMContentLoaded', initializeSettings);
 </script>
 {% endblock %}

@@ -380,6 +380,53 @@
     border: 1px solid var(--border-primary);
   }
 
+  /* Model Selector */
+  .model-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .model-selector label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .model-selector select {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-primary);
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--color-primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-family: var(--font-body);
+  }
+
+  .model-selector select:hover {
+    background: rgba(0, 217, 255, 0.15);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 8px rgba(0, 217, 255, 0.2);
+  }
+
+  .model-selector select:focus {
+    outline: none;
+    background: rgba(0, 217, 255, 0.15);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 12px rgba(0, 217, 255, 0.3);
+  }
+
+  .model-selector select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+  }
+
   .messages-box {
     flex: 1;
     overflow-y: auto;
@@ -620,6 +667,194 @@
     font-style: italic;
   }
 
+  /* ========== Data Visualization Components ========== */
+  .data-calendar {
+    margin: 12px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 217, 255, 0.1);
+    background: rgba(15, 20, 25, 0.5);
+  }
+
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: rgba(0, 217, 255, 0.1);
+    padding: 1px;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .calendar-month-header {
+    grid-column: 1 / -1;
+    padding: 12px;
+    background: rgba(0, 217, 255, 0.15);
+    text-align: center;
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 1px solid rgba(0, 217, 255, 0.2);
+  }
+
+  .calendar-weekday {
+    padding: 8px;
+    text-align: center;
+    background: rgba(0, 217, 255, 0.08);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 1px solid rgba(0, 217, 255, 0.1);
+  }
+
+  .calendar-day {
+    min-height: 60px;
+    padding: 6px;
+    background: var(--bg-primary);
+    border: 1px solid rgba(0, 217, 255, 0.08);
+    font-size: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .calendar-day:hover {
+    background: rgba(0, 217, 255, 0.05);
+    border-color: rgba(0, 217, 255, 0.2);
+  }
+
+  .calendar-day-number {
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .calendar-day-events {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+  }
+
+  .calendar-event {
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+  }
+
+  .calendar-event-urgent { background: rgba(244, 67, 54, 0.3); color: #ff6b6b; }
+  .calendar-event-high { background: rgba(255, 152, 0, 0.3); color: #ffb74d; }
+  .calendar-event-medium { background: rgba(33, 150, 243, 0.3); color: #64b5f6; }
+  .calendar-event-low { background: rgba(76, 175, 80, 0.3); color: #81c784; }
+
+  .calendar-other-month {
+    background: rgba(0, 0, 0, 0.2);
+    opacity: 0.4;
+  }
+
+  .calendar-today {
+    background: rgba(0, 217, 255, 0.1);
+    border-color: var(--color-primary);
+  }
+
+  /* ========== Data Table Styles ========== */
+  .data-table-wrapper {
+    margin: 12px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 217, 255, 0.1);
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .data-table thead {
+    background: rgba(0, 217, 255, 0.12);
+    border-bottom: 2px solid rgba(0, 217, 255, 0.2);
+  }
+
+  .data-table th {
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-primary);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+
+  .data-table tbody tr {
+    border-bottom: 1px solid rgba(0, 217, 255, 0.08);
+    transition: background var(--transition-fast);
+  }
+
+  .data-table tbody tr:hover {
+    background: rgba(0, 217, 255, 0.05);
+  }
+
+  .data-table td {
+    padding: 10px 12px;
+    color: var(--text-primary);
+  }
+
+  .data-table .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .badge-urgent { background: rgba(244, 67, 54, 0.2); color: #ff6b6b; }
+  .badge-high { background: rgba(255, 152, 0, 0.2); color: #ffb74d; }
+  .badge-medium { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+  .badge-low { background: rgba(76, 175, 80, 0.2); color: #81c784; }
+
+  .badge-pending { background: rgba(255, 193, 7, 0.2); color: #fbc02d; }
+  .badge-in_progress { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+  .badge-completed { background: rgba(76, 175, 80, 0.2); color: #81c784; }
+  .badge-cancelled { background: rgba(158, 158, 158, 0.2); color: #bdbdbd; }
+
+  .view-toggle {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
+    justify-content: center;
+  }
+
+  .view-toggle-btn {
+    padding: 6px 12px;
+    background: rgba(0, 217, 255, 0.1);
+    border: 1px solid rgba(0, 217, 255, 0.2);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+  }
+
+  .view-toggle-btn:hover {
+    background: rgba(0, 217, 255, 0.2);
+    color: var(--color-primary);
+  }
+
+  .view-toggle-btn.active {
+    background: var(--color-primary);
+    color: var(--text-inverse);
+    border-color: var(--color-primary);
+  }
+
   /* ========== Responsive Design ========== */
   @media (max-width: 768px) {
     .sidebar {
@@ -655,6 +890,78 @@
     }
   }
 
+  /* ========== Terminal Status Indicator ========== */
+  .terminal-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    margin-bottom: 15px;
+    background: rgba(102, 126, 234, 0.1);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    animation: slideDown 0.3s ease;
+  }
+
+  .terminal-indicator.active {
+    background: rgba(76, 175, 80, 0.1);
+    border-color: rgba(76, 175, 80, 0.3);
+    color: #4CAF50;
+  }
+
+  .terminal-indicator.inactive {
+    background: rgba(244, 67, 54, 0.1);
+    border-color: rgba(244, 67, 54, 0.3);
+    color: #f44336;
+  }
+
+  .terminal-indicator-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  .terminal-indicator-dot.active {
+    background: #4CAF50;
+  }
+
+  .terminal-indicator-dot.inactive {
+    background: #f44336;
+  }
+
+  .terminal-indicator-link {
+    margin-left: auto;
+    padding: 4px 8px;
+    background: rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.5);
+    border-radius: 4px;
+    color: #667eea;
+    text-decoration: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .terminal-indicator-link:hover {
+    background: rgba(102, 126, 234, 0.3);
+    transform: translateX(2px);
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   /* ========== Scrollbar Styling (Firefox) ========== */
   * {
     scrollbar-width: thin;
@@ -682,6 +989,7 @@
     <div class="sidebar-header">
       <h1>💬 Chats</h1>
       <a href="/settings/" class="settings-link" title="Settings">⚙️</a>
+      <a href="/claude-terminal/" class="settings-link" title="Claude Terminal">⌨️</a>
     </div>
 
     <button class="new-chat-btn" id="new-chat-btn">+ New Chat</button>
@@ -699,7 +1007,22 @@
         <input type="text" id="title-edit-input" class="title-edit-input" style="display: none;" />
         <span id="title-edit-icon" class="title-edit-icon" title="Edit title">✏️</span>
       </div>
-      <span class="model-badge" id="model-badge">{{ session.model }}</span>
+      <div class="model-selector">
+        <label for="model-select">AI Model:</label>
+        <select id="model-select">
+          <optgroup label="Claude (Anthropic)">
+            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+            <option value="claude-3-opus-20250219">Claude 3 Opus</option>
+            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+          </optgroup>
+          <optgroup label="Gemini (Google)">
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <option value="gemini-pro">Gemini Pro</option>
+          </optgroup>
+        </select>
+      </div>
     </div>
 
     <div class="messages-box" id="messages-box">
@@ -712,6 +1035,13 @@
           <div class="message-content">{{ message.response_md|safe }}</div>
         </div>
       {% endfor %}
+    </div>
+
+    <!-- Terminal Status Indicator -->
+    <div id="terminal-indicator" class="terminal-indicator inactive" style="display: none;">
+      <span class="terminal-indicator-dot inactive"></span>
+      <span id="terminal-status-text">Claude Terminal: Not Connected</span>
+      <a href="/claude-terminal/" class="terminal-indicator-link">Manage</a>
     </div>
 
     <form class="message-form" id="message-form">
@@ -730,6 +1060,23 @@
   const btnSend = document.getElementById('btn-send');
   const newChatBtn = document.getElementById('new-chat-btn');
   const sessionsContainer = document.getElementById('sessions-container');
+  const modelSelect = document.getElementById('model-select');
+
+  // Set the model selector to the current session's model (default to Claude 3.5 Sonnet)
+  let currentModel = 'claude-3-5-sonnet-20241022';
+  if ('{{ session.model }}' && modelSelect.querySelector(`option[value="{{ session.model }}"]`)) {
+    currentModel = '{{ session.model }}';
+    modelSelect.value = currentModel;
+  } else {
+    modelSelect.value = currentModel;
+  }
+
+  // Handle model selection change
+  modelSelect.addEventListener('change', (e) => {
+    currentModel = e.target.value;
+    // Update the model in the display
+    console.log('Model changed to:', currentModel);
+  });
 
   // Auto-resize textarea
   messageInput.addEventListener('input', () => {
@@ -904,14 +1251,18 @@
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           'message': message,
+          'model': currentModel,
           'csrfmiddlewaretoken': document.querySelector('[name=csrfmiddlewaretoken]').value
         })
       });
 
       const data = await response.json();
 
+      // Process and render data visualizations if present
+      const processedResponse = processDataVisualization(data.response);
+
       // Replace loading message with actual response
-      loadingMsg.innerHTML = `<div class="message-content">${data.response}</div>`;
+      loadingMsg.innerHTML = `<div class="message-content">${processedResponse}</div>`;
       loadSessions();
     } catch (error) {
       loadingMsg.innerHTML = `<div class="message-content">Error: ${error.message}</div>`;
@@ -933,7 +1284,265 @@
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
+  // ========== Data Visualization Functions ==========
+
+  function isCalendarData(data) {
+    // Check if data looks like calendar/event data
+    if (!data || typeof data !== 'object') return false;
+
+    // Check for common calendar patterns
+    return (
+      (data.events && Array.isArray(data.events)) ||
+      (data.tasks && Array.isArray(data.tasks)) ||
+      (Array.isArray(data) && data.length > 0 && data[0].due_date)
+    );
+  }
+
+  function renderCalendarView(data) {
+    const events = data.events || data.tasks || (Array.isArray(data) ? data : []);
+    if (events.length === 0) return '<p>No events to display</p>';
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    const lastDay = new Date(currentYear, currentMonth + 1, 0);
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+    const daysInCalendar = [];
+    let currentDate = new Date(startDate);
+    while (currentDate <= lastDay || daysInCalendar.length % 7 !== 0) {
+      daysInCalendar.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    const monthName = firstDay.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    let html = `<div class="data-calendar"><div class="calendar-grid">`;
+    html += `<div class="calendar-month-header">${monthName}</div>`;
+
+    weekdays.forEach(day => {
+      html += `<div class="calendar-weekday">${day}</div>`;
+    });
+
+    daysInCalendar.forEach(date => {
+      const isCurrentMonth = date.getMonth() === currentMonth;
+      const isToday = date.toDateString() === now.toDateString();
+
+      // Get events for this day
+      const dayEvents = events.filter(event => {
+        const eventDate = new Date(event.due_date || event.date);
+        return eventDate.toDateString() === date.toDateString();
+      });
+
+      let dayClass = 'calendar-day';
+      if (!isCurrentMonth) dayClass += ' calendar-other-month';
+      if (isToday) dayClass += ' calendar-today';
+
+      html += `<div class="${dayClass}">`;
+      html += `<div class="calendar-day-number">${date.getDate()}</div>`;
+      html += `<div class="calendar-day-events">`;
+
+      dayEvents.slice(0, 3).forEach(event => {
+        const priority = event.priority || 'medium';
+        const title = event.title || event.name || 'Event';
+        html += `<div class="calendar-event calendar-event-${priority}" title="${escapeHtml(title)}">${escapeHtml(title)}</div>`;
+      });
+
+      if (dayEvents.length > 3) {
+        html += `<div class="calendar-event" style="font-style: italic; opacity: 0.7;">+${dayEvents.length - 3} more</div>`;
+      }
+
+      html += `</div></div>`;
+    });
+
+    html += `</div></div>`;
+    return html;
+  }
+
+  function renderTableView(data) {
+    const items = data.events || data.tasks || (Array.isArray(data) ? data : []);
+    if (items.length === 0) return '<p>No data to display</p>';
+
+    // Auto-detect columns from first item
+    const firstItem = items[0];
+    const keys = Object.keys(firstItem).filter(k => !k.startsWith('_'));
+
+    let html = `<div class="data-table-wrapper"><table class="data-table"><thead><tr>`;
+
+    keys.forEach(key => {
+      html += `<th>${key.replace(/_/g, ' ')}</th>`;
+    });
+
+    html += `</tr></thead><tbody>`;
+
+    items.forEach(item => {
+      html += `<tr>`;
+      keys.forEach(key => {
+        let value = item[key];
+        let cellContent = value;
+
+        // Format special columns
+        if (key === 'priority' || key === 'status') {
+          const className = `badge badge-${value}`;
+          cellContent = `<span class="${className}">${value}</span>`;
+        } else if (key === 'due_date' || key === 'date') {
+          const date = new Date(value);
+          cellContent = date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+        } else if (typeof value === 'boolean') {
+          cellContent = value ? '✓' : '✗';
+        } else if (typeof value === 'object') {
+          cellContent = JSON.stringify(value).substring(0, 50);
+        }
+
+        html += `<td>${escapeHtml(String(cellContent))}</td>`;
+      });
+      html += `</tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    return html;
+  }
+
+  function processDataVisualization(responseHtml) {
+    // Try to find and render JSON data in the response
+    const jsonMatches = responseHtml.match(/```json([\s\S]*?)```/g);
+
+    if (jsonMatches && jsonMatches.length > 0) {
+      let processedHtml = responseHtml;
+
+      jsonMatches.forEach(match => {
+        const jsonStr = match.replace(/```json|```/g, '').trim();
+        try {
+          const data = JSON.parse(jsonStr);
+
+          if (isCalendarData(data)) {
+            const viewToggle = `
+              <div class="view-toggle">
+                <button class="view-toggle-btn active" onclick="this.parentElement.dataset.view='calendar'; updateVisualization(this.parentElement)">📅 Calendar</button>
+                <button class="view-toggle-btn" onclick="this.parentElement.dataset.view='table'; updateVisualization(this.parentElement)">📊 Table</button>
+              </div>
+            `;
+
+            const calendarView = renderCalendarView(data);
+            const tableView = renderTableView(data);
+
+            const visualization = `
+              <div class="data-visualization" data-view="calendar">
+                ${viewToggle}
+                <div class="calendar-view" style="display: block;">
+                  ${calendarView}
+                </div>
+                <div class="table-view" style="display: none;">
+                  ${tableView}
+                </div>
+              </div>
+            `;
+
+            processedHtml = processedHtml.replace(match, visualization);
+          }
+        } catch (e) {
+          // Not valid JSON or not calendar data, skip
+        }
+      });
+
+      return processedHtml;
+    }
+
+    return responseHtml;
+  }
+
+  function updateVisualization(container) {
+    const view = container.dataset.view;
+    const calendarView = container.querySelector('.calendar-view');
+    const tableView = container.querySelector('.table-view');
+    const buttons = container.querySelectorAll('.view-toggle-btn');
+
+    if (view === 'calendar') {
+      if (calendarView) calendarView.style.display = 'block';
+      if (tableView) tableView.style.display = 'none';
+      buttons.forEach(btn => btn.classList.remove('active'));
+      buttons[0].classList.add('active');
+    } else {
+      if (calendarView) calendarView.style.display = 'none';
+      if (tableView) tableView.style.display = 'block';
+      buttons.forEach(btn => btn.classList.remove('active'));
+      buttons[1].classList.add('active');
+    }
+  }
+
   // Load sessions on page load
   loadSessions();
+
+  // ========== Terminal Status Indicator ==========
+  const terminalIndicator = document.getElementById('terminal-indicator');
+  const terminalStatusText = document.getElementById('terminal-status-text');
+  let terminalStatusInterval = null;
+
+  async function checkTerminalStatus() {
+    try {
+      const response = await fetch('/api/terminal/status/');
+      const data = await response.json();
+
+      if (data.success && data.is_active) {
+        // Terminal is active
+        terminalIndicator.classList.remove('inactive');
+        terminalIndicator.classList.add('active');
+
+        const dot = terminalIndicator.querySelector('.terminal-indicator-dot');
+        dot.classList.remove('inactive');
+        dot.classList.add('active');
+
+        const uptime = data.uptime_seconds || 0;
+        const uptimeStr = formatUptimeShort(uptime);
+        terminalStatusText.textContent = `Claude Terminal: Connected (${data.connection_method.toUpperCase()}, ${uptimeStr})`;
+
+        // Show indicator if hidden
+        if (terminalIndicator.style.display === 'none') {
+          terminalIndicator.style.display = 'flex';
+        }
+      } else {
+        // Terminal is not active
+        terminalIndicator.classList.remove('active');
+        terminalIndicator.classList.add('inactive');
+
+        const dot = terminalIndicator.querySelector('.terminal-indicator-dot');
+        dot.classList.remove('active');
+        dot.classList.add('inactive');
+
+        terminalStatusText.textContent = 'Claude Terminal: Not Connected';
+
+        // Show indicator
+        if (terminalIndicator.style.display === 'none') {
+          terminalIndicator.style.display = 'flex';
+        }
+      }
+    } catch (error) {
+      console.error('Error checking terminal status:', error);
+    }
+  }
+
+  function formatUptimeShort(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    return `${Math.floor(seconds / 3600)}h`;
+  }
+
+  // Check terminal status initially
+  checkTerminalStatus();
+
+  // Check terminal status every 30 seconds
+  terminalStatusInterval = setInterval(checkTerminalStatus, 30000);
+
+  // Clean up on page unload
+  window.addEventListener('beforeunload', () => {
+    if (terminalStatusInterval) clearInterval(terminalStatusInterval);
+  });
 </script>
 {% endblock %}

@@ -299,3 +299,85 @@ class ChatAnalytics(models.Model):
 
     def __str__(self):
         return f'{self.user.username} - {self.date}'
+
+
+# ========== CLAUDE TERMINAL INTEGRATION ==========
+
+class ClaudeTerminalSession(models.Model):
+    """Represents a Claude Code terminal session linked to a web chat"""
+
+    CONNECTION_CHOICES = [
+        ('http', 'HTTP Proxy'),
+        ('ipc', 'Inter-Process Communication'),
+        ('file', 'File Queue'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='claude_terminals')
+    web_chat_session = models.OneToOneField(ChatSession, on_delete=models.SET_NULL, null=True, blank=True, related_name='terminal_session')
+
+    # Process management
+    terminal_pid = models.IntegerField(null=True, blank=True, help_text="Process ID of Claude terminal")
+    is_active = models.BooleanField(default=False, help_text="Terminal is running and connected")
+    is_enabled = models.BooleanField(default=False, help_text="Terminal mode enabled for this session")
+
+    # Connection configuration
+    connection_method = models.CharField(
+        max_length=10,
+        choices=CONNECTION_CHOICES,
+        default='http',
+        help_text="Communication method (HTTP, IPC, or File)"
+    )
+    connection_config = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Connection config (port for HTTP, pipe path for IPC, queue dir for File)"
+    )
+
+    # Status and monitoring
+    started_at = models.DateTimeField(null=True, blank=True)
+    last_message_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True, help_text="Last error message if any")
+    error_count = models.IntegerField(default=0)
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['is_active', '-updated_at']),
+        ]
+        verbose_name = "Claude Terminal Session"
+        verbose_name_plural = "Claude Terminal Sessions"
+
+    def __str__(self):
+        status = "Active" if self.is_active else "Inactive"
+        method = self.get_connection_method_display()
+        return f'{self.user.username} - {method} ({status})'
+
+    @property
+    def is_connected(self):
+        """Check if terminal is currently connected"""
+        return self.is_active and self.terminal_pid is not None
+
+    @property
+    def uptime_seconds(self):
+        """Get terminal uptime in seconds"""
+        if not self.started_at:
+            return 0
+        from django.utils import timezone
+        return int((timezone.now() - self.started_at).total_seconds())
+
+    def mark_error(self, error_message):
+        """Record an error and increment error count"""
+        self.last_error = error_message[:500]  # Truncate long errors
+        self.error_count += 1
+        self.save()
+
+    def clear_error(self):
+        """Clear error state"""
+        self.last_error = ''
+        self.error_count = 0
+        self.save()

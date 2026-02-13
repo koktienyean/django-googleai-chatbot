@@ -1,0 +1,29 @@
+{
+  "name": "Django Google AI Chatbot",
+  "description": "A Django chatbot with task management and calendar integration",
+  "settings": {
+    "taskManagement": {
+      "selectionOnMissingId": true,
+      "description": "When user asks to update/edit/remove a task without specifying ID, show task list for selection"
+    },
+    "dataVisualization": {
+      "enableCalendarView": true,
+      "enableTableView": true,
+      "description": "Automatically render calendar and table views for JSON task/event data in chat"
+    }
+  },
+  "rules": [
+    {
+      "trigger": "user asks to update/edit/remove/change task without providing task ID",
+      "action": "Show list of available tasks using TodoWrite, ask user to select one, then proceed with the requested action"
+    },
+    {
+      "trigger": "user provides task name or partial match",
+      "action": "Search for matching task and proceed directly without asking for ID"
+    },
+    {
+      "trigger": "Gemini API returns JSON with tasks/events/due_dates",
+      "action": "Automatically render in calendar view with toggle to table view"
+    }
+  ]
+}
