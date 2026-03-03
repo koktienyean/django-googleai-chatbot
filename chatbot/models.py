@@ -301,6 +301,193 @@ class ChatAnalytics(models.Model):
         return f'{self.user.username} - {self.date}'
 
 
+# ========== SKILL & FLOW ENGINE (PHASE D) ==========
+
+class Skill(models.Model):
+    """A reusable AI skill - an atomic action the AI can perform"""
+
+    SKILL_TYPES = [
+        ('query', 'Data Query'),
+        ('transform', 'Data Transform'),
+        ('generate', 'AI Generate'),
+        ('action', 'System Action'),
+        ('condition', 'Condition Check'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='skills')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    skill_type = models.CharField(max_length=20, choices=SKILL_TYPES)
+
+    config = models.JSONField(default=dict, help_text="Skill configuration (varies by type)")
+    input_schema = models.JSONField(default=dict, blank=True)
+    output_schema = models.JSONField(default=dict, blank=True)
+
+    is_system = models.BooleanField(default=False)
+
+    # Improvement tracking
+    version = models.IntegerField(default=1)
+    avg_rating = models.FloatField(default=0.0)
+    total_executions = models.IntegerField(default=0)
+    success_rate = models.FloatField(default=0.0)
+    last_improved_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        unique_together = ('user', 'name')
+
+    def __str__(self):
+        return f'{self.name} ({self.get_skill_type_display()})'
+
+    def update_stats(self):
+        """Recalculate cached stats from logs and feedback"""
+        from django.db.models import Avg
+        logs = self.execution_logs.all()
+        self.total_executions = logs.count()
+        if self.total_executions > 0:
+            self.success_rate = round(logs.filter(status='success').count() / self.total_executions * 100, 1)
+        feedback = self.feedback.all()
+        if feedback.exists():
+            self.avg_rating = round(feedback.aggregate(avg=Avg('rating'))['avg'] or 0.0, 1)
+        self.save()
+
+
+class Flow(models.Model):
+    """A sequential pipeline of skills"""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='flows')
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    trigger = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f'{self.name} ({self.steps.count()} steps)'
+
+
+class FlowStep(models.Model):
+    """A single step in a flow, linked to a skill"""
+
+    flow = models.ForeignKey(Flow, on_delete=models.CASCADE, related_name='steps')
+    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name='flow_steps')
+    order = models.IntegerField()
+    input_mapping = models.JSONField(default=dict, blank=True)
+    config_override = models.JSONField(default=dict, blank=True)
+    condition = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['order']
+        unique_together = ('flow', 'order')
+
+    def __str__(self):
+        return f'Step {self.order}: {self.skill.name}'
+
+
+class FlowExecution(models.Model):
+    """Tracks a single execution of a flow"""
+
+    STATUS_CHOICES = [
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    flow = models.ForeignKey(Flow, on_delete=models.CASCADE, related_name='executions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='running')
+    current_step = models.IntegerField(default=0)
+    total_steps = models.IntegerField()
+    step_results = models.JSONField(default=list)
+    triggered_by = models.CharField(max_length=50, default='manual')
+    trigger_context = models.JSONField(default=dict, blank=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+    chat_session = models.ForeignKey(ChatSession, null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ['-started_at']
+
+    def __str__(self):
+        return f'{self.flow.name} - {self.get_status_display()}'
+
+
+class SkillExecutionLog(models.Model):
+    """Records every single skill call with full input/output for review"""
+
+    STATUS_CHOICES = [
+        ('success', 'Success'),
+        ('error', 'Error'),
+        ('timeout', 'Timeout'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='skill_logs')
+    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name='execution_logs')
+    input_data = models.JSONField(default=dict)
+    output_data = models.JSONField(default=dict)
+    flow_execution = models.ForeignKey(FlowExecution, null=True, blank=True, on_delete=models.SET_NULL, related_name='skill_logs')
+    chat_session = models.ForeignKey(ChatSession, null=True, blank=True, on_delete=models.SET_NULL)
+    model_used = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='success')
+    duration_ms = models.IntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    executed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-executed_at']
+        indexes = [
+            models.Index(fields=['user', '-executed_at']),
+            models.Index(fields=['skill', '-executed_at']),
+            models.Index(fields=['status']),
+        ]
+
+    def __str__(self):
+        return f'{self.skill.name} - {self.status} - {self.executed_at:%Y-%m-%d %H:%M}'
+
+
+class SkillFeedback(models.Model):
+    """User feedback on a skill execution - drives self-improvement"""
+
+    RATING_CHOICES = [
+        (1, 'Poor'),
+        (2, 'Below Average'),
+        (3, 'Average'),
+        (4, 'Good'),
+        (5, 'Excellent'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='skill_feedback')
+    execution_log = models.OneToOneField(SkillExecutionLog, on_delete=models.CASCADE, related_name='feedback')
+    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name='feedback')
+    rating = models.IntegerField(choices=RATING_CHOICES)
+    comment = models.TextField(blank=True)
+    expected_output = models.TextField(blank=True)
+    applied = models.BooleanField(default=False)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['skill', '-created_at']),
+            models.Index(fields=['skill', 'rating']),
+            models.Index(fields=['applied']),
+        ]
+
+    def __str__(self):
+        return f'{self.skill.name} - {self.get_rating_display()} - {self.user.username}'
+
+
 # ========== CLAUDE TERMINAL INTEGRATION ==========
 
 class ClaudeTerminalSession(models.Model):

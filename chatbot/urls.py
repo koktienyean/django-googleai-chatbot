@@ -46,6 +46,31 @@ urlpatterns = [
     path('api/analytics/insights/', views.api_task_insights, name='api_task_insights'),
     path('api/analytics/weekly-report/', views.api_weekly_report, name='api_weekly_report'),
 
+    # Reports & Data Query endpoints (Phase C)
+    path('reports/', views.reports_page, name='reports'),
+    path('api/reports/generate/', views.api_generate_report, name='api_generate_report'),
+    path('api/reports/export/', views.api_export_report, name='api_export_report'),
+    path('api/data/query/', views.api_query_data, name='api_query_data'),
+
+    # Skill & Flow Engine endpoints (Phase D)
+    path('skills/', views.skills_page, name='skills'),
+    path('flow/run/<int:execution_id>/', views.flow_run_page, name='flow_run'),
+    path('api/skills/', views.api_skills_list, name='api_skills_list'),
+    path('api/skills/create/', views.api_skill_create, name='api_skill_create'),
+    path('api/skills/<int:skill_id>/', views.api_skill_detail, name='api_skill_detail'),
+    path('api/skills/<int:skill_id>/test/', views.api_skill_test, name='api_skill_test'),
+    path('api/skills/<int:skill_id>/logs/', views.api_skill_logs, name='api_skill_logs'),
+    path('api/skills/<int:skill_id>/improve/', views.api_skill_improve, name='api_skill_improve'),
+    path('api/skills/<int:skill_id>/apply-improvement/', views.api_skill_apply_improvement, name='api_skill_apply_improvement'),
+    path('api/flows/', views.api_flows_list, name='api_flows_list'),
+    path('api/flows/create/', views.api_flow_create, name='api_flow_create'),
+    path('api/flows/<int:flow_id>/run/', views.api_flow_run, name='api_flow_run'),
+    path('api/flow-executions/<int:execution_id>/', views.api_flow_execution_detail, name='api_flow_execution_detail'),
+    path('api/skill-feedback/', views.api_skill_feedback, name='api_skill_feedback'),
+
+    # Ollama endpoints
+    path('api/ollama/status/', views.api_ollama_status, name='api_ollama_status'),
+
     # Claude Terminal endpoints (Phase 1)
     path('claude-terminal/', views.claude_terminal, name='claude_terminal'),
     path('api/terminal/start/', views.api_terminal_start, name='api_terminal_start'),

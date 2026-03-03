@@ -4,7 +4,9 @@ from .models import (
     Chat, ChatSession, Task,
     Notification, NotificationPreference,
     RecurringTaskTemplate, RecurringTaskInstance,
-    TaskAnalytics, ChatAnalytics
+    TaskAnalytics, ChatAnalytics,
+    Skill, Flow, FlowStep, FlowExecution,
+    SkillExecutionLog, SkillFeedback
 )
 
 
@@ -631,3 +633,299 @@ class ChatAnalyticsAdmin(admin.ModelAdmin):
         """Optimize queryset"""
         qs = super().get_queryset(request)
         return qs.select_related('user')
+
+
+# ========== SKILL & FLOW ENGINE ADMIN (PHASE D) ==========
+
+class FlowStepInline(admin.TabularInline):
+    """Inline editor for flow steps"""
+    model = FlowStep
+    extra = 0
+    ordering = ['order']
+    fields = ('order', 'skill', 'input_mapping', 'config_override', 'condition')
+
+
+@admin.register(Skill)
+class SkillAdmin(admin.ModelAdmin):
+    """Admin interface for Skills"""
+
+    list_display = ('name', 'user_link', 'type_badge', 'system_badge', 'version', 'rating_display', 'success_display', 'total_executions', 'created_at')
+    list_filter = ('skill_type', 'is_system', 'created_at', 'user')
+    search_fields = ('name', 'description', 'user__username')
+    readonly_fields = ('created_at', 'updated_at', 'last_improved_at', 'avg_rating', 'success_rate', 'total_executions')
+
+    fieldsets = (
+        ('Skill Info', {
+            'fields': ('user', 'name', 'description', 'skill_type', 'is_system'),
+        }),
+        ('Configuration', {
+            'fields': ('config',),
+        }),
+        ('Statistics', {
+            'fields': ('version', 'avg_rating', 'success_rate', 'total_executions', 'last_improved_at'),
+            'classes': ('collapse',),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def user_link(self, obj):
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def type_badge(self, obj):
+        colors = {
+            'query': '#2196F3', 'transform': '#9C27B0', 'generate': '#FF9800',
+            'action': '#F44336', 'condition': '#009688',
+        }
+        color = colors.get(obj.skill_type, '#9E9E9E')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px; font-weight: bold;">{}</span>',
+            color, obj.skill_type
+        )
+    type_badge.short_description = 'Type'
+    type_badge.admin_order_field = 'skill_type'
+
+    def system_badge(self, obj):
+        if obj.is_system:
+            return format_html('<span style="color: #64b5f6; font-weight: bold;">System</span>')
+        return format_html('<span style="color: #a0a0a0;">Custom</span>')
+    system_badge.short_description = 'Source'
+
+    def rating_display(self, obj):
+        return f"{obj.avg_rating:.1f}/5"
+    rating_display.short_description = 'Rating'
+    rating_display.admin_order_field = 'avg_rating'
+
+    def success_display(self, obj):
+        return f"{obj.success_rate:.0f}%"
+    success_display.short_description = 'Success'
+    success_display.admin_order_field = 'success_rate'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user')
+
+
+@admin.register(Flow)
+class FlowAdmin(admin.ModelAdmin):
+    """Admin interface for Flows"""
+
+    list_display = ('name', 'user_link', 'step_count', 'is_active_badge', 'updated_at')
+    list_filter = ('is_active', 'created_at', 'user')
+    search_fields = ('name', 'description', 'user__username')
+    readonly_fields = ('created_at', 'updated_at')
+    inlines = [FlowStepInline]
+
+    fieldsets = (
+        ('Flow Info', {
+            'fields': ('user', 'name', 'description', 'is_active'),
+        }),
+        ('Trigger', {
+            'fields': ('trigger',),
+            'classes': ('collapse',),
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def user_link(self, obj):
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def step_count(self, obj):
+        count = obj.steps.count()
+        return f"{count} step{'s' if count != 1 else ''}"
+    step_count.short_description = 'Steps'
+
+    def is_active_badge(self, obj):
+        if obj.is_active:
+            return format_html('<span style="color: green; font-weight: bold;">Active</span>')
+        return format_html('<span style="color: red;">Inactive</span>')
+    is_active_badge.short_description = 'Status'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user')
+
+
+@admin.register(FlowExecution)
+class FlowExecutionAdmin(admin.ModelAdmin):
+    """Admin interface for Flow Executions"""
+
+    list_display = ('id', 'flow_link', 'user_link', 'status_badge', 'progress_display', 'triggered_by', 'started_at', 'completed_at')
+    list_filter = ('status', 'triggered_by', 'started_at', 'user')
+    search_fields = ('flow__name', 'user__username', 'error_message')
+    readonly_fields = ('started_at', 'completed_at', 'step_results', 'trigger_context')
+
+    fieldsets = (
+        ('Execution Info', {
+            'fields': ('flow', 'user', 'status', 'triggered_by', 'chat_session'),
+        }),
+        ('Progress', {
+            'fields': ('current_step', 'total_steps', 'step_results'),
+        }),
+        ('Context', {
+            'fields': ('trigger_context',),
+            'classes': ('collapse',),
+        }),
+        ('Error', {
+            'fields': ('error_message',),
+            'classes': ('collapse',),
+        }),
+        ('Timestamps', {
+            'fields': ('started_at', 'completed_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def flow_link(self, obj):
+        url = f'/admin/chatbot/flow/{obj.flow.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.flow.name)
+    flow_link.short_description = 'Flow'
+    flow_link.admin_order_field = 'flow__name'
+
+    def user_link(self, obj):
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def status_badge(self, obj):
+        colors = {
+            'running': '#2196F3', 'completed': '#4CAF50',
+            'failed': '#F44336', 'cancelled': '#9E9E9E',
+        }
+        color = colors.get(obj.status, '#9E9E9E')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px; font-weight: bold;">{}</span>',
+            color, obj.get_status_display()
+        )
+    status_badge.short_description = 'Status'
+    status_badge.admin_order_field = 'status'
+
+    def progress_display(self, obj):
+        return f"{obj.current_step}/{obj.total_steps}"
+    progress_display.short_description = 'Progress'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('flow', 'user', 'chat_session')
+
+
+@admin.register(SkillExecutionLog)
+class SkillExecutionLogAdmin(admin.ModelAdmin):
+    """Admin interface for Skill Execution Logs"""
+
+    list_display = ('id', 'skill_link', 'user_link', 'status_badge', 'duration_display', 'executed_at')
+    list_filter = ('status', 'executed_at', 'user')
+    search_fields = ('skill__name', 'user__username', 'error_message')
+    readonly_fields = ('executed_at', 'input_data', 'output_data')
+
+    fieldsets = (
+        ('Execution Info', {
+            'fields': ('skill', 'user', 'status', 'flow_execution'),
+        }),
+        ('Data', {
+            'fields': ('input_data', 'output_data'),
+        }),
+        ('Performance', {
+            'fields': ('duration_ms',),
+        }),
+        ('Error', {
+            'fields': ('error_message',),
+            'classes': ('collapse',),
+        }),
+        ('Timestamp', {
+            'fields': ('executed_at',),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def skill_link(self, obj):
+        url = f'/admin/chatbot/skill/{obj.skill.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.skill.name)
+    skill_link.short_description = 'Skill'
+    skill_link.admin_order_field = 'skill__name'
+
+    def user_link(self, obj):
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def status_badge(self, obj):
+        color = '#4CAF50' if obj.status == 'success' else '#F44336'
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px; font-weight: bold;">{}</span>',
+            color, obj.status
+        )
+    status_badge.short_description = 'Status'
+    status_badge.admin_order_field = 'status'
+
+    def duration_display(self, obj):
+        if obj.duration_ms:
+            return f"{obj.duration_ms}ms"
+        return '-'
+    duration_display.short_description = 'Duration'
+    duration_display.admin_order_field = 'duration_ms'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('skill', 'user', 'flow_execution')
+
+
+@admin.register(SkillFeedback)
+class SkillFeedbackAdmin(admin.ModelAdmin):
+    """Admin interface for Skill Feedback"""
+
+    list_display = ('id', 'skill_link', 'user_link', 'rating_stars', 'applied_badge', 'created_at')
+    list_filter = ('rating', 'applied', 'created_at')
+    search_fields = ('skill__name', 'user__username', 'comment')
+    readonly_fields = ('created_at', 'applied_at')
+
+    fieldsets = (
+        ('Feedback', {
+            'fields': ('skill', 'user', 'execution_log', 'rating', 'comment', 'expected_output'),
+        }),
+        ('Improvement', {
+            'fields': ('applied', 'applied_at'),
+        }),
+        ('Timestamp', {
+            'fields': ('created_at',),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def skill_link(self, obj):
+        url = f'/admin/chatbot/skill/{obj.skill.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.skill.name)
+    skill_link.short_description = 'Skill'
+    skill_link.admin_order_field = 'skill__name'
+
+    def user_link(self, obj):
+        url = f'/admin/auth/user/{obj.user.id}/change/'
+        return format_html('<a href="{}">{}</a>', url, obj.user.username)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__username'
+
+    def rating_stars(self, obj):
+        filled = int(obj.rating)
+        stars = '<span style="color: #FFD700;">' + ('&#9733;' * filled) + ('&#9734;' * (5 - filled)) + '</span>'
+        return format_html(stars)
+    rating_stars.short_description = 'Rating'
+    rating_stars.admin_order_field = 'rating'
+
+    def applied_badge(self, obj):
+        if obj.applied:
+            return format_html('<span style="color: green; font-weight: bold;">Applied</span>')
+        return format_html('<span style="color: #a0a0a0;">Pending</span>')
+    applied_badge.short_description = 'Applied'
+    applied_badge.admin_order_field = 'applied'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('skill', 'user', 'execution_log')

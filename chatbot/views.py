@@ -22,9 +22,17 @@ load_dotenv()
 import anthropic
 import google.generativeai as genai
 
+try:
+    import ollama as ollama_client
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+
 # Load environment variables from .env file
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 API_SECRET_KEY = os.getenv('API_SECRET_KEY')
+OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+OLLAMA_DEFAULT_MODEL = os.getenv('OLLAMA_DEFAULT_MODEL', 'llama3.2')
 
 # Initialize Anthropic client
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -34,288 +42,50 @@ if API_SECRET_KEY:
     genai.configure(api_key=API_SECRET_KEY)
 
 
+def get_ollama_models():
+    """Fetch available models from local Ollama instance."""
+    if not OLLAMA_AVAILABLE:
+        return []
+    try:
+        oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+        response = oc.list()
+        return [m.get('name', m.get('model', '')) for m in response.get('models', [])]
+    except Exception:
+        return []
+
+
 def ask_ai(message, model='claude-3-5-sonnet-20241022', user=None):
-    """Smart router that uses Claude API or Gemini API based on model parameter
+    """Smart router that uses Claude, Gemini, or Ollama based on model parameter
 
     Claude models: claude-3-5-sonnet-20241022, claude-3-opus-20250219, etc.
     Gemini models: gemini-2.0-flash, gemini-1.5-flash, gemini-pro, etc.
+    Ollama models: ollama:llama3.2, ollama:mistral, or any locally installed model
     """
     # Determine which API to use based on model name
     if model.startswith('claude'):
         return ask_claude(message, model, user)
     elif model.startswith('gemini') or model.startswith('gpt'):
         return ask_gemini_api(message, model, user)
+    elif model.startswith('ollama:'):
+        actual_model = model[len('ollama:'):]
+        return ask_ollama(message, actual_model, user)
     else:
+        # Check if it's a locally installed Ollama model
+        ollama_models = get_ollama_models()
+        if ollama_models and model in ollama_models:
+            return ask_ollama(message, model, user)
         # Default to Claude for unknown models
         return ask_claude(message, model, user)
 
 
 def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None):
-    """Call Claude API and return response text
-
-    Supports function calling to query user's Django data via:
-    - search_my_chats(keyword, limit)
-    - get_chat_statistics()
-    - get_recent_conversations(limit)
-    - search_by_date_range(start_date, end_date)
-    - get_session_summary(session_id)
-    - list_my_sessions(limit)
+    """Call Claude API and return response text.
+    Uses shared tool definitions from chatbot.tools package.
     """
+    from chatbot.tools import format_tools_for_claude, execute_tool, SYSTEM_INSTRUCTION
+
     try:
-        # Define tools that expose Django data to Claude
-        tools = []
-        if user:
-            # Chat history tools
-            tools.extend([
-                {
-                    "name": "search_chats_tool",
-                    "description": "Search through user's chat history by keyword",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "keyword": {"type": "string"},
-                            "limit": {"type": "integer", "default": 5}
-                        },
-                        "required": ["keyword"]
-                    }
-                },
-                {
-                    "name": "get_stats_tool",
-                    "description": "Get user's chat usage statistics",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                {
-                    "name": "get_recent_tool",
-                    "description": "Get user's recent conversations",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {"type": "integer", "default": 5}
-                        }
-                    }
-                },
-                {
-                    "name": "search_dates_tool",
-                    "description": "Search chats within a date range (YYYY-MM-DD format)",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "start_date": {"type": "string"},
-                            "end_date": {"type": "string"}
-                        },
-                        "required": ["start_date", "end_date"]
-                    }
-                },
-                {
-                    "name": "get_session_tool",
-                    "description": "Get detailed summary of a specific chat session",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "session_id": {"type": "integer"}
-                        },
-                        "required": ["session_id"]
-                    }
-                },
-                {
-                    "name": "list_sessions_tool",
-                    "description": "List all user's chat sessions",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {"type": "integer", "default": 10}
-                        }
-                    }
-                },
-                # Task management tools
-                {
-                    "name": "create_task_tool",
-                    "description": "Create a new task for the user",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "description": {"type": "string", "default": ""},
-                            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"], "default": "medium"},
-                            "due_date_str": {"type": "string"}
-                        },
-                        "required": ["title"]
-                    }
-                },
-                {
-                    "name": "list_tasks_tool",
-                    "description": "List user's tasks",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "status": {"type": "string", "enum": ["all", "pending", "in_progress", "completed", "cancelled"], "default": "all"},
-                            "limit": {"type": "integer", "default": 10}
-                        }
-                    }
-                },
-                {
-                    "name": "get_task_details_tool",
-                    "description": "Get complete details of a specific task by task ID",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "task_id": {"type": "integer"}
-                        },
-                        "required": ["task_id"]
-                    }
-                },
-                {
-                    "name": "update_task_status_tool",
-                    "description": "Change task status",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "task_id": {"type": "integer"},
-                            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]}
-                        },
-                        "required": ["task_id", "status"]
-                    }
-                },
-                {
-                    "name": "update_task_priority_tool",
-                    "description": "Change task priority",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "task_id": {"type": "integer"},
-                            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]}
-                        },
-                        "required": ["task_id", "priority"]
-                    }
-                },
-                {
-                    "name": "delete_task_tool",
-                    "description": "Delete a task permanently from the system",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "task_id": {"type": "integer"}
-                        },
-                        "required": ["task_id"]
-                    }
-                },
-                {
-                    "name": "get_pending_tasks_tool",
-                    "description": "Get user's urgent and high priority pending tasks",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {"type": "integer", "default": 5}
-                        }
-                    }
-                },
-                {
-                    "name": "get_task_summary_tool",
-                    "description": "Get summary counts of all tasks grouped by status",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                # Recurring tasks and notifications
-                {
-                    "name": "create_recurring_task_tool_wrapper",
-                    "description": "Create a recurring task",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "description": {"type": "string", "default": ""},
-                            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"], "default": "medium"},
-                            "frequency": {"type": "string", "enum": ["daily", "weekly", "biweekly", "monthly", "quarterly", "yearly"], "default": "weekly"}
-                        },
-                        "required": ["title", "frequency"]
-                    }
-                },
-                {
-                    "name": "list_recurring_tasks_tool_wrapper",
-                    "description": "List all recurring task templates",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                {
-                    "name": "skip_recurring_instance_tool_wrapper",
-                    "description": "Skip next instance of a recurring task",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "template_id": {"type": "integer"}
-                        },
-                        "required": ["template_id"]
-                    }
-                },
-                {
-                    "name": "get_notification_summary_tool_wrapper",
-                    "description": "Get notification summary and recent notifications",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                {
-                    "name": "set_notification_preference_tool_wrapper",
-                    "description": "Update notification preferences",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "preference_type": {"type": "string", "enum": ["deadline_reminder", "overdue_reminder", "daily_digest"]},
-                            "enabled": {"type": "boolean"}
-                        },
-                        "required": ["preference_type", "enabled"]
-                    }
-                },
-                # Analytics
-                {
-                    "name": "get_productivity_metrics_tool_wrapper",
-                    "description": "Get productivity metrics",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                {
-                    "name": "get_task_insights_tool_wrapper",
-                    "description": "Get AI-powered insights about task performance",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                {
-                    "name": "generate_weekly_report_tool_wrapper",
-                    "description": "Generate a weekly productivity report",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                }
-            ])
-
-        system_instruction = """You are a helpful AI assistant with access to tools for managing tasks and querying chat history.
-
-When the user asks you to:
-- Create a task: Use create_task_tool directly without asking for confirmation
-- List/show tasks: Use list_tasks_tool or get_task_summary_tool directly
-- Update task status/priority: Use the respective update tools directly
-- Search chats: Use search_chats_tool directly
-- Get statistics: Use get_stats_tool directly
-
-IMPORTANT: Call the appropriate tool IMMEDIATELY when the user requests these actions. Do not ask for confirmation - just call the function and show the result.
-
-For task priorities, accept any reasonable input and normalize to: low, medium, high, or urgent
-For task status, accept any reasonable input and normalize to: pending, in_progress, completed, or cancelled
-
-Always call the tool first, then provide a friendly response about what was done."""
+        tools = format_tools_for_claude(user) if user else []
 
         messages = [{"role": "user", "content": message}]
 
@@ -323,14 +93,13 @@ Always call the tool first, then provide a friendly response about what was done
         response = client.messages.create(
             model=model,
             max_tokens=2048,
-            system=system_instruction,
+            system=SYSTEM_INSTRUCTION if tools else None,
             tools=tools if tools else None,
             messages=messages
         )
 
         # Handle tool use in responses
         while response.stop_reason == "tool_use":
-            # Find the tool use block
             tool_use_block = None
             for block in response.content:
                 if block.type == "tool_use":
@@ -340,60 +109,8 @@ Always call the tool first, then provide a friendly response about what was done
             if not tool_use_block:
                 break
 
-            function_name = tool_use_block.name
-            function_args = tool_use_block.input
-
-            # Call the appropriate function
-            result = None
-            if function_name == 'search_chats_tool':
-                result = search_my_chats(user, function_args.get('keyword'), function_args.get('limit', 5))
-            elif function_name == 'get_stats_tool':
-                result = get_chat_statistics(user)
-            elif function_name == 'get_recent_tool':
-                result = get_recent_conversations(user, function_args.get('limit', 5))
-            elif function_name == 'search_dates_tool':
-                result = search_by_date_range(user, function_args.get('start_date'), function_args.get('end_date'))
-            elif function_name == 'get_session_tool':
-                result = get_session_summary(user, function_args.get('session_id'))
-            elif function_name == 'list_sessions_tool':
-                result = list_my_sessions(user, function_args.get('limit', 10))
-            elif function_name == 'create_task_tool':
-                result = create_task(user, function_args.get('title'), function_args.get('description', ''),
-                                   function_args.get('priority', 'medium'), function_args.get('due_date_str'))
-            elif function_name == 'list_tasks_tool':
-                result = list_my_tasks(user, function_args.get('status', 'all'), function_args.get('limit', 10))
-            elif function_name == 'get_task_details_tool':
-                result = get_task_details(user, function_args.get('task_id'))
-            elif function_name == 'update_task_status_tool':
-                result = update_task_status(user, function_args.get('task_id'), function_args.get('status'))
-            elif function_name == 'update_task_priority_tool':
-                result = update_task_priority(user, function_args.get('task_id'), function_args.get('priority'))
-            elif function_name == 'delete_task_tool':
-                result = delete_task(user, function_args.get('task_id'))
-            elif function_name == 'get_pending_tasks_tool':
-                result = get_pending_tasks(user, function_args.get('limit', 5))
-            elif function_name == 'get_task_summary_tool':
-                result = get_task_summary(user)
-            elif function_name == 'create_recurring_task_tool_wrapper':
-                result = create_recurring_task_tool(user, function_args.get('title'), function_args.get('description', ''),
-                                                  function_args.get('priority', 'medium'), function_args.get('frequency', 'weekly'),
-                                                  function_args.get('start_date_str'), function_args.get('end_date_str'))
-            elif function_name == 'list_recurring_tasks_tool_wrapper':
-                result = list_recurring_tasks_tool(user)
-            elif function_name == 'skip_recurring_instance_tool_wrapper':
-                result = skip_recurring_instance_tool(user, function_args.get('template_id'))
-            elif function_name == 'get_notification_summary_tool_wrapper':
-                result = get_notification_summary_tool(user)
-            elif function_name == 'set_notification_preference_tool_wrapper':
-                result = set_notification_preference_tool(user, function_args.get('preference_type'), function_args.get('enabled'))
-            elif function_name == 'get_productivity_metrics_tool_wrapper':
-                result = get_productivity_metrics_tool(user)
-            elif function_name == 'get_task_insights_tool_wrapper':
-                result = get_task_insights_tool(user)
-            elif function_name == 'generate_weekly_report_tool_wrapper':
-                result = generate_weekly_report_tool(user)
-            else:
-                result = {'error': f'Unknown function: {function_name}'}
+            # Dispatch through shared executor
+            result = execute_tool(user, tool_use_block.name, tool_use_block.input)
 
             # Continue the conversation with the tool result
             messages.append({"role": "assistant", "content": response.content})
@@ -412,7 +129,7 @@ Always call the tool first, then provide a friendly response about what was done
             response = client.messages.create(
                 model=model,
                 max_tokens=2048,
-                system=system_instruction,
+                system=SYSTEM_INSTRUCTION if tools else None,
                 tools=tools if tools else None,
                 messages=messages
             )
@@ -430,162 +147,17 @@ Always call the tool first, then provide a friendly response about what was done
 
 
 def ask_gemini_api(message, model='gemini-2.0-flash', user=None):
-    """Call Gemini (Google Generative AI) API and return response text
-
-    Supports function calling to query user's Django data via:
-    - search_my_chats(keyword, limit)
-    - get_chat_statistics()
-    - get_recent_conversations(limit)
-    - search_by_date_range(start_date, end_date)
-    - get_session_summary(session_id)
-    - list_my_sessions(limit)
+    """Call Gemini (Google Generative AI) API and return response text.
+    Uses shared tool definitions from chatbot.tools package.
     """
+    from chatbot.tools import format_tools_for_gemini, execute_tool, SYSTEM_INSTRUCTION
+
     try:
-        # Define tools that expose Django data to Gemini
-        tools = None
-        if user:
-            # Create wrapper functions that bind the user context
-            def search_chats_tool(keyword: str, limit: int = 5):
-                """Search through user's chat history by keyword"""
-                return search_my_chats(user, keyword, limit)
-
-            def get_stats_tool():
-                """Get user's chat usage statistics"""
-                return get_chat_statistics(user)
-
-            def get_recent_tool(limit: int = 5):
-                """Get user's recent conversations"""
-                return get_recent_conversations(user, limit)
-
-            def search_dates_tool(start_date: str, end_date: str):
-                """Search chats within a date range (YYYY-MM-DD format)"""
-                return search_by_date_range(user, start_date, end_date)
-
-            def get_session_tool(session_id: int):
-                """Get detailed summary of a specific chat session"""
-                return get_session_summary(user, session_id)
-
-            def list_sessions_tool(limit: int = 10):
-                """List all user's chat sessions"""
-                return list_my_sessions(user, limit)
-
-            # Task management tools
-            def create_task_tool(title: str, description: str = '', priority: str = 'medium', due_date_str: str = None):
-                """Create a new task for the user. Priority must be one of: low, medium, high, urgent. Due date format: YYYY-MM-DD or natural language like 'tomorrow' or 'next Friday'"""
-                return create_task(user, title, description, priority, due_date_str)
-
-            def list_tasks_tool(status: str = 'all', limit: int = 10):
-                """List user's tasks. Status can be: all, pending, in_progress, completed, or cancelled. Returns task title, description, priority, status, and due date"""
-                return list_my_tasks(user, status, limit)
-
-            def get_task_details_tool(task_id: int):
-                """Get complete details of a specific task by task ID including title, description, priority, status, due date, and when it was created"""
-                return get_task_details(user, task_id)
-
-            def update_task_status_tool(task_id: int, status: str):
-                """Change task status. Status must be one of: pending, in_progress, completed, or cancelled"""
-                return update_task_status(user, task_id, status)
-
-            def update_task_priority_tool(task_id: int, priority: str):
-                """Change task priority. Priority must be one of: low, medium, high, or urgent"""
-                return update_task_priority(user, task_id, priority)
-
-            def delete_task_tool(task_id: int):
-                """Delete a task permanently from the system"""
-                return delete_task(user, task_id)
-
-            def get_pending_tasks_tool(limit: int = 5):
-                """Get user's urgent and high priority pending tasks that need attention"""
-                return get_pending_tasks(user, limit)
-
-            def get_task_summary_tool():
-                """Get summary counts of all tasks grouped by status: total, pending, in_progress, completed, cancelled, and overdue"""
-                return get_task_summary(user)
-
-            # Phase 4: Recurring tasks and notifications
-            def create_recurring_task_tool_wrapper(title: str, description: str = '', priority: str = 'medium', frequency: str = 'weekly', start_date_str: str = None, end_date_str: str = None):
-                """Create a recurring task. Frequency: daily, weekly, biweekly, monthly, quarterly, yearly"""
-                return create_recurring_task_tool(user, title, description, priority, frequency, start_date_str, end_date_str)
-
-            def list_recurring_tasks_tool_wrapper():
-                """List all recurring task templates"""
-                return list_recurring_tasks_tool(user)
-
-            def skip_recurring_instance_tool_wrapper(template_id: int):
-                """Skip next instance of a recurring task"""
-                return skip_recurring_instance_tool(user, template_id)
-
-            def get_notification_summary_tool_wrapper():
-                """Get notification summary and recent notifications"""
-                return get_notification_summary_tool(user)
-
-            def set_notification_preference_tool_wrapper(preference_type: str, enabled: bool):
-                """Update notification preferences. Types: deadline_reminder, overdue_reminder, daily_digest"""
-                return set_notification_preference_tool(user, preference_type, enabled)
-
-            # Phase 5: Analytics
-            def get_productivity_metrics_tool_wrapper():
-                """Get productivity metrics: completion rate, task counts, average completion time"""
-                return get_productivity_metrics_tool(user)
-
-            def get_task_insights_tool_wrapper():
-                """Get AI-powered insights about task performance and productivity"""
-                return get_task_insights_tool(user)
-
-            def generate_weekly_report_tool_wrapper():
-                """Generate a weekly productivity report"""
-                return generate_weekly_report_tool(user)
-
-            tools = [
-                # Chat history and statistics
-                search_chats_tool,
-                get_stats_tool,
-                get_recent_tool,
-                search_dates_tool,
-                get_session_tool,
-                list_sessions_tool,
-                # Task management
-                create_task_tool,
-                list_tasks_tool,
-                get_task_details_tool,
-                update_task_status_tool,
-                update_task_priority_tool,
-                delete_task_tool,
-                get_pending_tasks_tool,
-                get_task_summary_tool,
-                # Phase 4: Recurring tasks
-                create_recurring_task_tool_wrapper,
-                list_recurring_tasks_tool_wrapper,
-                skip_recurring_instance_tool_wrapper,
-                # Phase 4: Notifications
-                get_notification_summary_tool_wrapper,
-                set_notification_preference_tool_wrapper,
-                # Phase 5: Analytics
-                get_productivity_metrics_tool_wrapper,
-                get_task_insights_tool_wrapper,
-                generate_weekly_report_tool_wrapper,
-            ]
+        tools = format_tools_for_gemini(user) if user else None
 
         # Create model with tools if user is provided
-        system_instruction = None
         if tools:
-            system_instruction = """You are a helpful AI assistant with access to tools for managing tasks and querying chat history.
-
-When the user asks you to:
-- Create a task: Use create_task_tool directly without asking for confirmation
-- List/show tasks: Use list_tasks_tool or get_task_summary_tool directly
-- Update task status/priority: Use the respective update tools directly
-- Search chats: Use search_chats_tool directly
-- Get statistics: Use get_stats_tool directly
-
-IMPORTANT: Call the appropriate tool IMMEDIATELY when the user requests these actions. Do not ask for confirmation - just call the function and show the result.
-
-For task priorities, accept any reasonable input and normalize to: low, medium, high, or urgent
-For task status, accept any reasonable input and normalize to: pending, in_progress, completed, or cancelled
-
-Always call the tool first, then provide a friendly response about what was done."""
-
-            model_obj = genai.GenerativeModel(model, tools=tools, system_instruction=system_instruction)
+            model_obj = genai.GenerativeModel(model, tools=tools, system_instruction=SYSTEM_INSTRUCTION)
         else:
             model_obj = genai.GenerativeModel(model)
 
@@ -596,7 +168,6 @@ Always call the tool first, then provide a friendly response about what was done
         while response.candidates and response.candidates[0].content.parts:
             last_part = response.candidates[0].content.parts[-1]
 
-            # Check if this is a function call
             if not hasattr(last_part, 'function_call') or not last_part.function_call:
                 break
 
@@ -604,61 +175,8 @@ Always call the tool first, then provide a friendly response about what was done
             function_name = function_call.name
             function_args = function_call.args
 
-            # Call the appropriate function
-            # Chat history functions
-            if function_name == 'search_chats_tool':
-                result = search_my_chats(user, function_args.get('keyword'), function_args.get('limit', 5))
-            elif function_name == 'get_stats_tool':
-                result = get_chat_statistics(user)
-            elif function_name == 'get_recent_tool':
-                result = get_recent_conversations(user, function_args.get('limit', 5))
-            elif function_name == 'search_dates_tool':
-                result = search_by_date_range(user, function_args.get('start_date'), function_args.get('end_date'))
-            elif function_name == 'get_session_tool':
-                result = get_session_summary(user, function_args.get('session_id'))
-            elif function_name == 'list_sessions_tool':
-                result = list_my_sessions(user, function_args.get('limit', 10))
-            # Task management functions
-            elif function_name == 'create_task_tool':
-                result = create_task(user, function_args.get('title'), function_args.get('description', ''),
-                                   function_args.get('priority', 'medium'), function_args.get('due_date_str'))
-            elif function_name == 'list_tasks_tool':
-                result = list_my_tasks(user, function_args.get('status', 'all'), function_args.get('limit', 10))
-            elif function_name == 'get_task_details_tool':
-                result = get_task_details(user, function_args.get('task_id'))
-            elif function_name == 'update_task_status_tool':
-                result = update_task_status(user, function_args.get('task_id'), function_args.get('status'))
-            elif function_name == 'update_task_priority_tool':
-                result = update_task_priority(user, function_args.get('task_id'), function_args.get('priority'))
-            elif function_name == 'delete_task_tool':
-                result = delete_task(user, function_args.get('task_id'))
-            elif function_name == 'get_pending_tasks_tool':
-                result = get_pending_tasks(user, function_args.get('limit', 5))
-            elif function_name == 'get_task_summary_tool':
-                result = get_task_summary(user)
-            # Phase 4: Recurring tasks
-            elif function_name == 'create_recurring_task_tool_wrapper':
-                result = create_recurring_task_tool(user, function_args.get('title'), function_args.get('description', ''),
-                                                  function_args.get('priority', 'medium'), function_args.get('frequency', 'weekly'),
-                                                  function_args.get('start_date_str'), function_args.get('end_date_str'))
-            elif function_name == 'list_recurring_tasks_tool_wrapper':
-                result = list_recurring_tasks_tool(user)
-            elif function_name == 'skip_recurring_instance_tool_wrapper':
-                result = skip_recurring_instance_tool(user, function_args.get('template_id'))
-            # Phase 4: Notifications
-            elif function_name == 'get_notification_summary_tool_wrapper':
-                result = get_notification_summary_tool(user)
-            elif function_name == 'set_notification_preference_tool_wrapper':
-                result = set_notification_preference_tool(user, function_args.get('preference_type'), function_args.get('enabled'))
-            # Phase 5: Analytics
-            elif function_name == 'get_productivity_metrics_tool_wrapper':
-                result = get_productivity_metrics_tool(user)
-            elif function_name == 'get_task_insights_tool_wrapper':
-                result = get_task_insights_tool(user)
-            elif function_name == 'generate_weekly_report_tool_wrapper':
-                result = generate_weekly_report_tool(user)
-            else:
-                result = {'error': f'Unknown function: {function_name}'}
+            # Dispatch through shared executor
+            result = execute_tool(user, function_name, dict(function_args))
 
             # Send function result back to Gemini with proper format
             response = chat.send_message(
@@ -682,6 +200,67 @@ Always call the tool first, then provide a friendly response about what was done
 def ask_gemini(message, model='claude-3-5-sonnet-20241022', user=None):
     """Legacy wrapper that now calls ask_ai() - supports both Claude and Gemini"""
     return ask_ai(message, model, user)
+
+
+def ask_ollama(message, model=None, user=None):
+    """Call local Ollama API and return response text.
+    Uses shared tool definitions from chatbot.tools package.
+    Supports tool/function calling for compatible models.
+    """
+    if not OLLAMA_AVAILABLE:
+        return "Error: Ollama library not installed. Run: pip install ollama"
+
+    from chatbot.tools import format_tools_for_ollama, execute_tool, SYSTEM_INSTRUCTION
+
+    model = model or OLLAMA_DEFAULT_MODEL
+
+    try:
+        oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+
+        tools = format_tools_for_ollama(user) if user else []
+        messages = [{"role": "user", "content": message}]
+
+        # Add system instruction when tools are available
+        if tools:
+            messages.insert(0, {"role": "system", "content": SYSTEM_INSTRUCTION})
+
+        # Call Ollama with tools
+        response = oc.chat(
+            model=model,
+            messages=messages,
+            tools=tools if tools else None
+        )
+
+        # Handle tool calls in response
+        while response.get('message', {}).get('tool_calls'):
+            # Append assistant message with tool calls
+            messages.append(response['message'])
+
+            for tool_call in response['message']['tool_calls']:
+                func_name = tool_call['function']['name']
+                func_args = tool_call['function']['arguments']
+                result = execute_tool(user, func_name, func_args)
+
+                # Append tool result
+                messages.append({
+                    "role": "tool",
+                    "content": str(result)
+                })
+
+            # Get next response
+            response = oc.chat(
+                model=model,
+                messages=messages,
+                tools=tools if tools else None
+            )
+
+        return response.get('message', {}).get('content', 'No response generated')
+
+    except Exception as e:
+        error_msg = str(e)
+        if 'connection' in error_msg.lower() or 'refused' in error_msg.lower():
+            return "Error: Cannot connect to Ollama. Make sure Ollama is running (ollama serve)"
+        return f"Ollama Error: {error_msg}"
 
 
 def ask_openai(request, message, model='gemini-1.5-flash'):
@@ -1594,6 +1173,388 @@ def api_weekly_report(request):
     return JsonResponse(generate_weekly_report_tool(request.user))
 
 
+# ========== SKILL & FLOW VIEWS (PHASE D) ==========
+
+@login_required
+def skills_page(request):
+    """Display the 3-panel skills & flows dashboard"""
+    return render(request, 'skills.html', {'user': request.user})
+
+
+@login_required
+def flow_run_page(request, execution_id):
+    """Display flow execution progress page"""
+    from .models import FlowExecution
+    execution = get_object_or_404(FlowExecution, id=execution_id, user=request.user)
+    return render(request, 'flow_run.html', {
+        'execution': execution,
+        'flow': execution.flow,
+    })
+
+
+@login_required
+def api_skills_list(request):
+    """List all skills for the current user"""
+    from .models import Skill
+    skill_type = request.GET.get('type', 'all')
+    qs = Skill.objects.filter(user=request.user)
+    if skill_type != 'all':
+        qs = qs.filter(skill_type=skill_type)
+    skills = list(qs.values(
+        'id', 'name', 'description', 'skill_type', 'is_system',
+        'version', 'avg_rating', 'total_executions', 'success_rate',
+        'created_at', 'updated_at'
+    ))
+    for s in skills:
+        for key in ('created_at', 'updated_at'):
+            if s.get(key):
+                s[key] = s[key].isoformat()
+    return JsonResponse({'skills': skills})
+
+
+@login_required
+def api_skill_create(request):
+    """Create a new skill"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    import json
+    from .models import Skill
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        data = request.POST
+
+    skill, created = Skill.objects.get_or_create(
+        user=request.user,
+        name=data.get('name', ''),
+        defaults={
+            'description': data.get('description', ''),
+            'skill_type': data.get('skill_type', 'generate'),
+            'config': data.get('config', {}),
+        }
+    )
+    if not created:
+        return JsonResponse({'error': f'Skill "{skill.name}" already exists'}, status=400)
+    return JsonResponse({'status': 'created', 'skill_id': skill.id, 'name': skill.name})
+
+
+@login_required
+def api_skill_detail(request, skill_id):
+    """Get, update, or delete a skill"""
+    from .models import Skill
+    skill = get_object_or_404(Skill, id=skill_id, user=request.user)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'id': skill.id, 'name': skill.name, 'description': skill.description,
+            'skill_type': skill.skill_type, 'config': skill.config,
+            'input_schema': skill.input_schema, 'output_schema': skill.output_schema,
+            'is_system': skill.is_system, 'version': skill.version,
+            'avg_rating': skill.avg_rating, 'total_executions': skill.total_executions,
+            'success_rate': skill.success_rate,
+        })
+    elif request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            data = request.POST
+        if 'description' in data:
+            skill.description = data['description']
+        if 'config' in data:
+            skill.config = data['config']
+        if 'skill_type' in data:
+            skill.skill_type = data['skill_type']
+        skill.save()
+        return JsonResponse({'status': 'updated', 'skill_id': skill.id})
+    elif request.method == 'DELETE':
+        skill.delete()
+        return JsonResponse({'status': 'deleted'})
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@login_required
+def api_skill_test(request, skill_id):
+    """Test-run a skill with sample input"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    import json
+    from .models import Skill
+    from chatbot.skills.executor import SkillExecutor
+
+    skill = get_object_or_404(Skill, id=skill_id, user=request.user)
+    try:
+        input_data = json.loads(request.body)
+    except json.JSONDecodeError:
+        input_data = {}
+
+    executor = SkillExecutor(request.user)
+    try:
+        result = executor.execute(skill, input_data)
+        return JsonResponse({'status': 'success', 'result': result})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'error': str(e)})
+
+
+@login_required
+def api_flows_list(request):
+    """List all flows"""
+    from .models import Flow
+    flows = Flow.objects.filter(user=request.user, is_active=True)
+    result = []
+    for f in flows:
+        steps = list(f.steps.order_by('order').values('order', 'skill__name', 'skill__skill_type'))
+        result.append({
+            'id': f.id, 'name': f.name, 'description': f.description,
+            'step_count': len(steps),
+            'steps': [{'order': s['order'], 'skill': s['skill__name'], 'type': s['skill__skill_type']} for s in steps],
+            'created_at': f.created_at.isoformat(),
+        })
+    return JsonResponse({'flows': result})
+
+
+@login_required
+def api_flow_create(request):
+    """Create a new flow"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    import json
+    from .models import Flow, FlowStep, Skill
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    flow = Flow.objects.create(
+        user=request.user,
+        name=data.get('name', 'Untitled Flow'),
+        description=data.get('description', ''),
+    )
+    for i, step_def in enumerate(data.get('steps', [])):
+        skill_name = step_def.get('skill_name', step_def.get('skill', ''))
+        try:
+            skill = Skill.objects.get(user=request.user, name=skill_name)
+        except Skill.DoesNotExist:
+            continue
+        FlowStep.objects.create(
+            flow=flow, skill=skill, order=i + 1,
+            input_mapping=step_def.get('input_mapping', {}),
+            config_override=step_def.get('config_override', {}),
+            condition=step_def.get('condition', {}),
+        )
+    return JsonResponse({'status': 'created', 'flow_id': flow.id, 'name': flow.name})
+
+
+@login_required
+def api_flow_run(request, flow_id):
+    """Execute a flow"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    import json
+    from .models import Flow
+    from chatbot.skills.flow_engine import FlowEngine
+
+    flow = get_object_or_404(Flow, id=flow_id, user=request.user, is_active=True)
+    try:
+        context = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        context = {}
+
+    engine = FlowEngine(request.user)
+    execution = engine.execute_flow(flow, trigger_context=context)
+    return JsonResponse({
+        'execution_id': execution.id,
+        'status': execution.status,
+        'total_steps': execution.total_steps,
+        'step_results': execution.step_results,
+        'error': execution.error_message or None,
+    })
+
+
+@login_required
+def api_flow_execution_detail(request, execution_id):
+    """Get execution details (for polling progress)"""
+    from .models import FlowExecution
+    execution = get_object_or_404(FlowExecution, id=execution_id, user=request.user)
+    return JsonResponse({
+        'execution_id': execution.id,
+        'flow_name': execution.flow.name,
+        'status': execution.status,
+        'current_step': execution.current_step,
+        'total_steps': execution.total_steps,
+        'step_results': execution.step_results,
+        'started_at': execution.started_at.isoformat(),
+        'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+        'error': execution.error_message or None,
+    })
+
+
+@login_required
+def api_skill_logs(request, skill_id):
+    """Get execution logs for a skill"""
+    from .models import SkillExecutionLog
+    logs = SkillExecutionLog.objects.filter(
+        skill_id=skill_id, user=request.user
+    ).order_by('-executed_at')[:50]
+    result = []
+    for log in logs:
+        entry = {
+            'id': log.id,
+            'status': log.status,
+            'input_data': log.input_data,
+            'output_data': log.output_data,
+            'duration_ms': log.duration_ms,
+            'error_message': log.error_message,
+            'model_used': log.model_used,
+            'executed_at': log.executed_at.isoformat(),
+            'has_feedback': hasattr(log, 'feedback') and log.feedback is not None,
+        }
+        try:
+            fb = log.feedback
+            entry['feedback'] = {'rating': fb.rating, 'comment': fb.comment}
+        except Exception:
+            entry['feedback'] = None
+        result.append(entry)
+    return JsonResponse({'logs': result})
+
+
+@login_required
+def api_skill_feedback(request):
+    """Submit feedback on a skill execution"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    import json
+    from .models import SkillExecutionLog, SkillFeedback
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    try:
+        log = SkillExecutionLog.objects.get(id=data.get('execution_log_id'), user=request.user)
+    except SkillExecutionLog.DoesNotExist:
+        return JsonResponse({'error': 'Log not found'}, status=404)
+
+    feedback, created = SkillFeedback.objects.get_or_create(
+        user=request.user, execution_log=log,
+        defaults={
+            'skill': log.skill,
+            'rating': data.get('rating', 3),
+            'comment': data.get('comment', ''),
+            'expected_output': data.get('expected_output', ''),
+        }
+    )
+    if not created:
+        feedback.rating = data.get('rating', feedback.rating)
+        feedback.comment = data.get('comment', feedback.comment)
+        feedback.save()
+    log.skill.update_stats()
+    return JsonResponse({'status': 'ok', 'feedback_id': feedback.id})
+
+
+@login_required
+def api_skill_improve(request, skill_id):
+    """Get AI-suggested improvements for a skill"""
+    from .models import Skill
+    from chatbot.skills.improver import SkillImprover
+    skill = get_object_or_404(Skill, id=skill_id, user=request.user)
+    improver = SkillImprover(request.user)
+    result = improver.suggest_improvement(skill)
+    return JsonResponse(result)
+
+
+@login_required
+def api_skill_apply_improvement(request, skill_id):
+    """Apply an improvement to a skill config"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    import json
+    from .models import Skill
+    from chatbot.skills.improver import SkillImprover
+    skill = get_object_or_404(Skill, id=skill_id, user=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    new_config = data.get('config', {})
+    if not new_config:
+        return JsonResponse({'error': 'No config provided'}, status=400)
+    improver = SkillImprover(request.user)
+    result = improver.apply_improvement(skill, new_config)
+    return JsonResponse(result)
+
+
+@login_required
+def reports_page(request):
+    """Display the reports dashboard"""
+    return render(request, 'reports.html', {
+        'user': request.user
+    })
+
+
+@login_required
+def api_generate_report(request):
+    """API endpoint to generate reports on demand"""
+    from chatbot.tools.report_builder import ReportBuilder
+
+    report_type = request.GET.get('report_type', 'summary')
+    data_type = request.GET.get('data_type', 'tasks')
+    time_range = request.GET.get('time_range', 'last_30_days')
+    output_format = request.GET.get('format', 'markdown')
+
+    builder = ReportBuilder(request.user)
+    result = builder.generate_report(report_type, data_type, time_range, output_format)
+    return JsonResponse(result)
+
+
+@login_required
+def api_query_data(request):
+    """API endpoint for flexible data queries"""
+    import json
+    from chatbot.tools.query_engine import execute_query
+
+    data_type = request.GET.get('data_type', 'tasks')
+    aggregation = request.GET.get('aggregation', 'none')
+    order_by = request.GET.get('order_by', '-created_at')
+    limit = int(request.GET.get('limit', 20))
+
+    # Parse filters from JSON query param
+    filters_str = request.GET.get('filters', '{}')
+    try:
+        filters = json.loads(filters_str) if filters_str else {}
+    except json.JSONDecodeError:
+        filters = {}
+
+    result = execute_query(request.user, data_type, filters=filters,
+                          aggregation=aggregation, order_by=order_by, limit=limit)
+    return JsonResponse(result)
+
+
+@login_required
+def api_export_report(request):
+    """Export report data as CSV"""
+    import csv
+    from django.http import HttpResponse
+    from chatbot.tools.query_engine import execute_query
+
+    data_type = request.GET.get('data_type', 'tasks')
+    export_format = request.GET.get('format', 'csv')
+
+    data = execute_query(request.user, data_type, limit=100)
+    results = data.get('results', [])
+
+    if export_format == 'csv' and results:
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{data_type}_export.csv"'
+        writer = csv.DictWriter(response, fieldnames=results[0].keys())
+        writer.writeheader()
+        for row in results:
+            writer.writerow(row)
+        return response
+
+    return JsonResponse(data)
+
+
 @login_required
 def chatbot_home(request):
     """Redirect to latest active session or create one"""
@@ -1751,13 +1712,22 @@ def settings_page(request):
 
 @login_required
 def api_list_models(request):
-    """Fetch available free tier Gemini models with caching"""
-    cache_key = 'gemini_models_list'
+    """Fetch available models from all backends (Gemini, Claude, Ollama) with caching"""
+    cache_key = 'all_models_list'
     models_data = cache.get(cache_key)
 
     if not models_data:
+        models_data = []
+
+        # Claude models (static list - subscription required)
+        models_data.extend([
+            {'name': 'claude-3-5-sonnet-20241022', 'display': 'Claude 3.5 Sonnet', 'provider': 'claude'},
+            {'name': 'claude-3-opus-20250219', 'display': 'Claude 3 Opus', 'provider': 'claude'},
+            {'name': 'claude-3-haiku-20240307', 'display': 'Claude 3 Haiku', 'provider': 'claude'},
+        ])
+
+        # Gemini models
         try:
-            # Free tier models that support generateContent
             free_tier_models = [
                 'gemini-2.0-flash',
                 'gemini-1.5-flash',
@@ -1765,27 +1735,73 @@ def api_list_models(request):
             ]
 
             models = genai.list_models()
-            # Filter for generateContent capable models AND free tier only
             available_models = [m for m in models if 'generateContent' in m.supported_generation_methods]
 
-            models_data = [{
+            gemini_models = [{
                 'name': m.name.replace('models/', ''),
-                'display': m.display_name
+                'display': m.display_name,
+                'provider': 'gemini'
             } for m in available_models if m.name.replace('models/', '') in free_tier_models]
 
-            # If no free tier models found, provide defaults
-            if not models_data:
-                models_data = [
-                    {'name': 'gemini-2.0-flash', 'display': 'Gemini 2.0 Flash (Free)'},
-                    {'name': 'gemini-1.5-flash', 'display': 'Gemini 1.5 Flash (Free)'},
-                    {'name': 'gemini-1.5-flash-8b', 'display': 'Gemini 1.5 Flash 8B (Free)'},
-                ]
+            if gemini_models:
+                models_data.extend(gemini_models)
+            else:
+                models_data.extend([
+                    {'name': 'gemini-2.0-flash', 'display': 'Gemini 2.0 Flash', 'provider': 'gemini'},
+                    {'name': 'gemini-1.5-flash', 'display': 'Gemini 1.5 Flash', 'provider': 'gemini'},
+                    {'name': 'gemini-1.5-flash-8b', 'display': 'Gemini 1.5 Flash 8B', 'provider': 'gemini'},
+                ])
+        except Exception:
+            models_data.extend([
+                {'name': 'gemini-2.0-flash', 'display': 'Gemini 2.0 Flash', 'provider': 'gemini'},
+                {'name': 'gemini-1.5-flash', 'display': 'Gemini 1.5 Flash', 'provider': 'gemini'},
+            ])
 
-            cache.set(cache_key, models_data, timeout=3600)  # 1 hour
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+        # Ollama models (local)
+        ollama_models = get_ollama_models()
+        for m in ollama_models:
+            models_data.append({
+                'name': f'ollama:{m}',
+                'display': f'{m}',
+                'provider': 'ollama'
+            })
+
+        cache.set(cache_key, models_data, timeout=300)  # 5 min cache (Ollama models can change)
 
     return JsonResponse({'models': models_data})
+
+
+@login_required
+def api_ollama_status(request):
+    """Check if Ollama is running and return available models"""
+    if not OLLAMA_AVAILABLE:
+        return JsonResponse({
+            'status': 'unavailable',
+            'message': 'Ollama library not installed',
+            'models': []
+        })
+
+    try:
+        ollama_models = get_ollama_models()
+        if ollama_models:
+            return JsonResponse({
+                'status': 'connected',
+                'base_url': OLLAMA_BASE_URL,
+                'models': ollama_models
+            })
+        else:
+            return JsonResponse({
+                'status': 'connected',
+                'base_url': OLLAMA_BASE_URL,
+                'models': [],
+                'message': 'No models installed. Run: ollama pull llama3.2'
+            })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'disconnected',
+            'message': str(e),
+            'models': []
+        })
 
 
 @login_required
@@ -1799,7 +1815,7 @@ def api_save_settings(request):
     if not model_name:
         return JsonResponse({'error': 'Model name required'}, status=400)
 
-    # Validate model - support both Claude and Gemini
+    # Validate model - support Claude, Gemini, and Ollama
     valid_models = [
         # Claude models
         'claude-3-5-sonnet-20241022',
@@ -1812,7 +1828,9 @@ def api_save_settings(request):
         'gemini-pro',
     ]
 
-    if model_name not in valid_models:
+    # Also accept any ollama: prefixed model
+    is_ollama_model = model_name.startswith('ollama:')
+    if model_name not in valid_models and not is_ollama_model:
         return JsonResponse({'error': f'Invalid model: {model_name}'}, status=400)
 
     # Get or create current session and update model

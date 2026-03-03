@@ -1,0 +1,564 @@
+{% extends 'base.html' %}
+
+{% block title %}Reports - AI Chatbot{% endblock %}
+
+{% block styles %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --color-primary: #00d9ff;
+    --color-primary-dark: #00a8cc;
+    --color-secondary: #ff006e;
+    --color-accent: #06d6a0;
+    --color-warning: #ffd60a;
+
+    --bg-primary: #0f1419;
+    --bg-secondary: #1a1f2e;
+    --bg-tertiary: #2d3748;
+
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-muted: #707070;
+    --text-inverse: #0f1419;
+
+    --border-primary: rgba(0, 217, 255, 0.2);
+    --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.4);
+    --transition-smooth: 0.3s ease;
+    --font-display: 'Playfair Display', serif;
+    --font-body: 'Outfit', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body, html {
+    height: 100%;
+    font-family: var(--font-body);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, #0a0e1a 100%);
+    color: var(--text-primary);
+  }
+
+  .reports-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    min-height: 100vh;
+  }
+
+  .reports-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+
+  .reports-header h1 {
+    font-family: var(--font-display);
+    font-size: 32px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .header-actions { display: flex; gap: 10px; }
+
+  .back-btn, .export-btn {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all var(--transition-smooth);
+  }
+
+  .back-btn {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+    color: var(--text-inverse);
+    box-shadow: 0 8px 24px rgba(0, 217, 255, 0.3);
+  }
+
+  .export-btn {
+    background: rgba(6, 214, 160, 0.15);
+    color: var(--color-accent);
+    border: 1px solid rgba(6, 214, 160, 0.3);
+  }
+
+  .back-btn:hover, .export-btn:hover { transform: translateY(-2px); }
+
+  /* Controls */
+  .report-controls {
+    background: rgba(26, 31, 42, 0.7);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .control-group { display: flex; flex-direction: column; gap: 6px; }
+  .control-group label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  .control-group select, .control-group input {
+    padding: 10px 12px;
+    background: rgba(45, 55, 72, 0.6);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 13px;
+    min-width: 160px;
+  }
+
+  .control-group select:focus, .control-group input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+  }
+
+  .btn-generate {
+    padding: 10px 24px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+    color: var(--text-inverse);
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all var(--transition-smooth);
+    align-self: flex-end;
+  }
+
+  .btn-generate:hover { transform: translateY(-1px); }
+
+  /* Metrics row */
+  .metrics-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .metric-card {
+    background: rgba(26, 31, 42, 0.7);
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+
+  .metric-value {
+    font-size: 36px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--color-primary);
+  }
+
+  .metric-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+  }
+
+  .metric-change {
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .metric-change.positive { color: var(--color-accent); }
+  .metric-change.negative { color: var(--color-secondary); }
+
+  /* Report output */
+  .report-output {
+    background: rgba(26, 31, 42, 0.7);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    padding: 28px;
+    min-height: 300px;
+  }
+
+  .report-output h2 {
+    font-size: 20px;
+    margin-bottom: 16px;
+    color: var(--text-primary);
+  }
+
+  .report-output table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+  }
+
+  .report-output th {
+    background: rgba(0, 217, 255, 0.1);
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-primary);
+    border-bottom: 1px solid var(--border-primary);
+  }
+
+  .report-output td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .report-output tr:hover td {
+    background: rgba(0, 217, 255, 0.03);
+  }
+
+  .report-markdown {
+    font-family: var(--font-body);
+    line-height: 1.7;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    font-size: 14px;
+  }
+
+  .report-markdown strong { color: var(--color-primary); }
+
+  .loading-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: var(--text-muted);
+  }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(0, 217, 255, 0.2);
+    border-top: 2px solid var(--color-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+  }
+
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  /* Bar chart */
+  .bar-chart { margin: 16px 0; }
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0;
+  }
+  .bar-label {
+    width: 80px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+  .bar-fill {
+    height: 20px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-primary-dark));
+    border-radius: 3px;
+    transition: width 0.5s ease;
+    min-width: 2px;
+  }
+  .bar-value {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .reports-container { padding: 20px 16px; }
+    .reports-header { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .report-controls { flex-direction: column; }
+    .control-group select { min-width: 100%; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="reports-container">
+  <div class="reports-header">
+    <h1>Reports & Analytics</h1>
+    <div class="header-actions">
+      <button class="export-btn" id="export-btn">Export CSV</button>
+      <a href="/" class="back-btn">Back to Chat</a>
+    </div>
+  </div>
+
+  <div class="report-controls">
+    <div class="control-group">
+      <label>Report Type</label>
+      <select id="report-type">
+        <option value="summary">Summary</option>
+        <option value="detailed">Detailed</option>
+        <option value="trend">Trend</option>
+        <option value="comparison">Comparison</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>Data Source</label>
+      <select id="data-type">
+        <option value="tasks">Tasks</option>
+        <option value="chats">Chats</option>
+        <option value="sessions">Sessions</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>Time Range</label>
+      <select id="time-range">
+        <option value="today">Today</option>
+        <option value="this_week">This Week</option>
+        <option value="last_7_days">Last 7 Days</option>
+        <option value="this_month">This Month</option>
+        <option value="last_30_days" selected>Last 30 Days</option>
+      </select>
+    </div>
+
+    <button class="btn-generate" id="generate-btn">Generate Report</button>
+  </div>
+
+  <div class="metrics-row" id="metrics-row">
+    <!-- Metrics populated by JS -->
+  </div>
+
+  <div class="report-output" id="report-output">
+    <div class="loading-overlay" id="report-placeholder">
+      <p>Select options above and click <strong>Generate Report</strong> to get started.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  const generateBtn = document.getElementById('generate-btn');
+  const exportBtn = document.getElementById('export-btn');
+  const reportOutput = document.getElementById('report-output');
+  const metricsRow = document.getElementById('metrics-row');
+
+  function getCookie(name) {
+    let v = null;
+    if (document.cookie) {
+      document.cookie.split(';').forEach(c => {
+        c = c.trim();
+        if (c.startsWith(name + '=')) v = decodeURIComponent(c.substring(name.length + 1));
+      });
+    }
+    return v;
+  }
+
+  // Generate report
+  generateBtn.addEventListener('click', async () => {
+    const reportType = document.getElementById('report-type').value;
+    const dataType = document.getElementById('data-type').value;
+    const timeRange = document.getElementById('time-range').value;
+
+    reportOutput.innerHTML = '<div class="loading-overlay"><span class="loading-spinner"></span> Generating report...</div>';
+    metricsRow.innerHTML = '';
+
+    try {
+      const params = new URLSearchParams({
+        report_type: reportType,
+        data_type: dataType,
+        time_range: timeRange,
+        format: 'markdown'
+      });
+
+      const response = await fetch(`/api/reports/generate/?${params}`);
+      const data = await response.json();
+
+      if (data.error) {
+        reportOutput.innerHTML = `<p style="color: var(--color-secondary);">Error: ${data.error}</p>`;
+        return;
+      }
+
+      // Show metrics cards
+      renderMetrics(data, dataType);
+
+      // Show report content
+      renderReport(data);
+
+    } catch (e) {
+      reportOutput.innerHTML = `<p style="color: var(--color-secondary);">Error: ${e.message}</p>`;
+    }
+  });
+
+  function renderMetrics(data, dataType) {
+    let cards = '';
+
+    if (data.total !== undefined) {
+      cards += makeMetricCard(data.total, 'Total Records', '');
+    }
+
+    if (data.completion_rate !== undefined) {
+      cards += makeMetricCard(data.completion_rate + '%', 'Completion Rate',
+        data.completion_rate >= 70 ? 'positive' : 'negative');
+    }
+
+    if (data.current_period !== undefined) {
+      const cls = data.change >= 0 ? 'positive' : 'negative';
+      cards += makeMetricCard(data.current_period, 'Current Period', '');
+      cards += makeMetricCard(data.previous_period, 'Previous Period', '');
+      cards += makeMetricCard((data.change >= 0 ? '+' : '') + data.change, 'Change', cls);
+    }
+
+    if (data.by_status) {
+      data.by_status.forEach(g => {
+        cards += makeMetricCard(g.count, g.status || 'N/A', '');
+      });
+    }
+
+    metricsRow.innerHTML = cards;
+  }
+
+  function makeMetricCard(value, label, changeClass) {
+    return `<div class="metric-card">
+      <div class="metric-value ${changeClass}">${value}</div>
+      <div class="metric-label">${label}</div>
+    </div>`;
+  }
+
+  function renderReport(data) {
+    if (data.markdown) {
+      // Convert markdown tables to HTML tables
+      let md = data.markdown;
+      md = convertMarkdownTables(md);
+      reportOutput.innerHTML = `<div class="report-markdown">${md}</div>`;
+    } else if (data.trend) {
+      renderTrendChart(data.trend);
+    } else if (data.results) {
+      renderResultsTable(data.results);
+    } else {
+      reportOutput.innerHTML = `<pre style="color: var(--text-secondary);">${JSON.stringify(data, null, 2)}</pre>`;
+    }
+  }
+
+  function convertMarkdownTables(md) {
+    // Simple markdown table converter
+    const lines = md.split('\n');
+    let html = '';
+    let inTable = false;
+    let isHeader = true;
+
+    for (let line of lines) {
+      line = line.trim();
+
+      if (line.startsWith('|') && line.endsWith('|')) {
+        // Skip separator rows
+        if (line.match(/^\|[\s\-|]+\|$/)) continue;
+
+        if (!inTable) {
+          html += '<table>';
+          inTable = true;
+          isHeader = true;
+        }
+
+        const cells = line.split('|').filter(c => c.trim() !== '');
+        const tag = isHeader ? 'th' : 'td';
+        html += '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+        isHeader = false;
+      } else {
+        if (inTable) {
+          html += '</table>';
+          inTable = false;
+          isHeader = true;
+        }
+
+        if (line.startsWith('## ')) {
+          html += `<h2>${line.substring(3)}</h2>`;
+        } else if (line.startsWith('### ')) {
+          html += `<h3 style="margin-top: 20px; font-size: 16px; color: var(--color-primary);">${line.substring(4)}</h3>`;
+        } else if (line.startsWith('**') && line.endsWith('**')) {
+          html += `<p><strong>${line.slice(2, -2)}</strong></p>`;
+        } else if (line.includes('**')) {
+          html += `<p>${line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</p>`;
+        } else if (line) {
+          html += `<p>${line}</p>`;
+        }
+      }
+    }
+
+    if (inTable) html += '</table>';
+    return html;
+  }
+
+  function renderTrendChart(trend) {
+    if (!trend || trend.length === 0) {
+      reportOutput.innerHTML = '<p>No trend data available.</p>';
+      return;
+    }
+
+    const max = Math.max(...trend.map(t => t.count), 1);
+    const recent = trend.slice(-14);
+
+    let html = '<h2>Activity Trend</h2><div class="bar-chart">';
+    for (const t of recent) {
+      const pct = (t.count / max * 100);
+      const label = t.date.substring(5); // MM-DD
+      html += `<div class="bar-row">
+        <span class="bar-label">${label}</span>
+        <div class="bar-fill" style="width: ${Math.max(pct, 1)}%;"></div>
+        <span class="bar-value">${t.count}</span>
+      </div>`;
+    }
+    html += '</div>';
+
+    const total = trend.reduce((s, t) => s + t.count, 0);
+    const avg = (total / trend.length).toFixed(1);
+    html += `<p style="margin-top: 16px; color: var(--text-secondary);"><strong>Total:</strong> ${total} | <strong>Daily avg:</strong> ${avg}</p>`;
+
+    reportOutput.innerHTML = html;
+  }
+
+  function renderResultsTable(results) {
+    if (!results || results.length === 0) {
+      reportOutput.innerHTML = '<p>No results found.</p>';
+      return;
+    }
+
+    const keys = Object.keys(results[0]).slice(0, 6);
+    let html = '<table><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr>';
+    for (const row of results.slice(0, 50)) {
+      html += '<tr>' + keys.map(k => {
+        let v = row[k];
+        if (typeof v === 'string' && v.length > 40) v = v.substring(0, 40) + '...';
+        return `<td>${v !== null && v !== undefined ? v : ''}</td>`;
+      }).join('') + '</tr>';
+    }
+    html += '</table>';
+    reportOutput.innerHTML = html;
+  }
+
+  // Export CSV
+  exportBtn.addEventListener('click', () => {
+    const dataType = document.getElementById('data-type').value;
+    window.location.href = `/api/reports/export/?data_type=${dataType}&format=csv`;
+  });
+
+  // Auto-generate on load
+  document.addEventListener('DOMContentLoaded', () => {
+    generateBtn.click();
+  });
+</script>
+{% endblock %}

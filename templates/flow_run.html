@@ -1,0 +1,657 @@
+{% extends 'base.html' %}
+
+{% block title %}Flow Run - {{ flow.name }}{% endblock %}
+
+{% block styles %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --color-primary: #00d9ff;
+    --color-primary-dark: #00a8cc;
+    --color-secondary: #ff006e;
+    --color-accent: #06d6a0;
+    --bg-primary: #0f1419;
+    --bg-secondary: #1a1f2e;
+    --bg-tertiary: #2d3748;
+    --bg-hover: #3d4659;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-muted: #707070;
+    --border-primary: rgba(0, 217, 255, 0.2);
+    --border-secondary: rgba(255, 0, 110, 0.2);
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.4);
+    --transition-fast: 0.2s ease;
+    --transition-smooth: 0.3s ease;
+    --font-display: 'Playfair Display', serif;
+    --font-body: 'Outfit', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body, html {
+    height: 100%;
+    font-family: var(--font-body);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, #0a0e1a 100%);
+    color: var(--text-primary);
+  }
+
+  .flow-run-wrapper {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 24px;
+    min-height: 100vh;
+  }
+
+  /* ========== Header ========== */
+  .flow-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all var(--transition-fast);
+    border: 1px solid transparent;
+  }
+  .back-btn:hover {
+    color: var(--color-primary);
+    border-color: var(--border-primary);
+    background: var(--bg-hover);
+  }
+
+  .flow-title {
+    flex: 1;
+  }
+  .flow-title h1 {
+    font-family: var(--font-display);
+    font-size: 28px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .flow-title .flow-desc {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-top: 4px;
+  }
+
+  .flow-status-badge {
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-running { background: rgba(33, 150, 243, 0.2); color: #64b5f6; border: 1px solid rgba(33, 150, 243, 0.4); }
+  .status-completed { background: rgba(76, 175, 80, 0.2); color: #81c784; border: 1px solid rgba(76, 175, 80, 0.4); }
+  .status-failed { background: rgba(244, 67, 54, 0.2); color: #ef5350; border: 1px solid rgba(244, 67, 54, 0.4); }
+  .status-cancelled { background: rgba(158, 158, 158, 0.2); color: #bdbdbd; border: 1px solid rgba(158, 158, 158, 0.4); }
+
+  /* ========== Progress Bar ========== */
+  .progress-section {
+    background: rgba(26, 31, 42, 0.95);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .progress-bar-outer {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-bar-inner {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+  .progress-meta {
+    display: flex;
+    gap: 24px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .progress-meta span { display: flex; align-items: center; gap: 4px; }
+
+  /* ========== Pipeline Steps ========== */
+  .pipeline {
+    position: relative;
+    margin-bottom: 32px;
+  }
+  .pipeline::before {
+    content: '';
+    position: absolute;
+    left: 20px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--bg-tertiary);
+  }
+
+  .pipeline-step {
+    position: relative;
+    padding-left: 52px;
+    margin-bottom: 16px;
+  }
+  .pipeline-step:last-child { margin-bottom: 0; }
+
+  .step-icon {
+    position: absolute;
+    left: 8px;
+    top: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    z-index: 1;
+    border: 2px solid var(--bg-tertiary);
+    background: var(--bg-primary);
+    transition: all var(--transition-smooth);
+  }
+  .step-icon.pending { border-color: var(--text-muted); color: var(--text-muted); }
+  .step-icon.running { border-color: #64b5f6; color: #64b5f6; animation: pulse 1.5s infinite; }
+  .step-icon.completed { border-color: #81c784; color: #81c784; background: rgba(76, 175, 80, 0.15); }
+  .step-icon.failed { border-color: #ef5350; color: #ef5350; background: rgba(244, 67, 54, 0.15); }
+  .step-icon.skipped { border-color: #bdbdbd; color: #bdbdbd; }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(100, 181, 246, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(100, 181, 246, 0); }
+  }
+
+  .step-card {
+    background: rgba(26, 31, 42, 0.95);
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all var(--transition-fast);
+  }
+  .step-card:hover { border-color: var(--color-primary); }
+
+  .step-card-header {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+  }
+  .step-card-header:hover { background: rgba(0, 217, 255, 0.03); }
+
+  .step-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+  }
+  .step-number {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .step-name {
+    font-weight: 500;
+    font-size: 14px;
+  }
+  .step-type-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--color-primary);
+  }
+
+  .step-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .step-duration {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .step-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .dot-pending { background: var(--text-muted); }
+  .dot-running { background: #64b5f6; animation: blink 1s infinite; }
+  .dot-completed { background: #81c784; }
+  .dot-failed { background: #ef5350; }
+  .dot-skipped { background: #bdbdbd; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .step-toggle {
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: transform var(--transition-fast);
+  }
+  .step-toggle.open { transform: rotate(180deg); }
+
+  .step-card-body {
+    display: none;
+    padding: 0 16px 14px;
+    border-top: 1px solid rgba(0, 217, 255, 0.08);
+  }
+  .step-card-body.open { display: block; }
+
+  .io-section {
+    margin-top: 12px;
+  }
+  .io-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .io-content {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg-primary);
+    border: 1px solid rgba(0, 217, 255, 0.08);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .step-error {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    border-radius: 6px;
+    font-size: 12px;
+    color: #ef5350;
+    font-family: var(--font-mono);
+  }
+
+  .step-skipped-reason {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: rgba(158, 158, 158, 0.1);
+    border-radius: 6px;
+    font-size: 12px;
+    color: #bdbdbd;
+    font-style: italic;
+  }
+
+  /* ========== Feedback Section ========== */
+  .feedback-section {
+    background: rgba(26, 31, 42, 0.95);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .feedback-section h3 {
+    font-size: 16px;
+    margin-bottom: 16px;
+    color: var(--text-primary);
+  }
+  .feedback-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .feedback-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid rgba(0, 217, 255, 0.06);
+  }
+  .feedback-skill-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .feedback-btns {
+    display: flex;
+    gap: 6px;
+  }
+  .fb-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--bg-tertiary);
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+  }
+  .fb-btn:hover { background: var(--bg-hover); }
+  .fb-btn.selected-good { background: rgba(76, 175, 80, 0.2); border-color: #81c784; }
+  .fb-btn.selected-bad { background: rgba(244, 67, 54, 0.2); border-color: #ef5350; }
+
+  /* ========== Error Banner ========== */
+  .error-banner {
+    background: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .error-banner-icon { font-size: 20px; }
+  .error-banner-text {
+    flex: 1;
+    font-size: 13px;
+    color: #ef5350;
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+  }
+
+  /* ========== Scrollbar ========== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--bg-hover); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flow-run-wrapper">
+
+  <!-- Header -->
+  <div class="flow-header">
+    <a href="/skills/" class="back-btn">&#8592; Skills</a>
+    <div class="flow-title">
+      <h1 id="flow-name">{{ flow.name }}</h1>
+      <div class="flow-desc">{{ flow.description }}</div>
+    </div>
+    <span class="flow-status-badge status-{{ execution.status }}" id="status-badge">{{ execution.get_status_display }}</span>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-section">
+    <div class="progress-label">
+      <span id="progress-text">Step <span id="current-step">{{ execution.current_step }}</span> of {{ execution.total_steps }}</span>
+      <span id="progress-pct">0%</span>
+    </div>
+    <div class="progress-bar-outer">
+      <div class="progress-bar-inner" id="progress-bar" style="width: 0%"></div>
+    </div>
+    <div class="progress-meta">
+      <span>Started: <strong id="started-at">{{ execution.started_at|date:"M d, Y H:i" }}</strong></span>
+      <span>Trigger: <strong>{{ execution.triggered_by }}</strong></span>
+      <span id="completed-meta" style="display:none">Completed: <strong id="completed-at"></strong></span>
+    </div>
+  </div>
+
+  <!-- Error Banner (hidden by default) -->
+  <div class="error-banner" id="error-banner" style="display:none">
+    <span class="error-banner-icon">&#x26A0;</span>
+    <div class="error-banner-text" id="error-text"></div>
+  </div>
+
+  <!-- Pipeline Steps -->
+  <div class="pipeline" id="pipeline">
+    <!-- Steps rendered by JS -->
+  </div>
+
+  <!-- Feedback Section (shown after completion) -->
+  <div class="feedback-section" id="feedback-section" style="display:none">
+    <h3>Rate Step Outputs</h3>
+    <div class="feedback-steps" id="feedback-steps">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const EXECUTION_ID = {{ execution.id }};
+  const TOTAL_STEPS = {{ execution.total_steps }};
+  const CSRF = '{{ csrf_token }}';
+  let currentData = null;
+  let pollInterval = null;
+
+  // Fetch execution details and render
+  async function fetchExecution() {
+    try {
+      const resp = await fetch(`/api/flow-executions/${EXECUTION_ID}/`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      currentData = data;
+      renderExecution(data);
+
+      // Stop polling when done
+      if (data.status !== 'running' && pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    } catch (e) {
+      console.error('Failed to fetch execution:', e);
+    }
+  }
+
+  function renderExecution(data) {
+    // Update status badge
+    const badge = document.getElementById('status-badge');
+    badge.className = `flow-status-badge status-${data.status}`;
+    badge.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+
+    // Update progress
+    const completedSteps = (data.step_results || []).length;
+    const pct = TOTAL_STEPS > 0 ? Math.round((completedSteps / TOTAL_STEPS) * 100) : 0;
+    document.getElementById('current-step').textContent = data.current_step;
+    document.getElementById('progress-pct').textContent = pct + '%';
+    document.getElementById('progress-bar').style.width = pct + '%';
+
+    // Completed time
+    if (data.completed_at) {
+      const d = new Date(data.completed_at);
+      document.getElementById('completed-at').textContent = d.toLocaleString();
+      document.getElementById('completed-meta').style.display = '';
+    }
+
+    // Error banner
+    if (data.error) {
+      document.getElementById('error-banner').style.display = 'flex';
+      document.getElementById('error-text').textContent = data.error;
+    } else {
+      document.getElementById('error-banner').style.display = 'none';
+    }
+
+    // Render pipeline steps
+    renderPipeline(data);
+
+    // Show feedback if completed
+    if (data.status === 'completed' || data.status === 'failed') {
+      renderFeedback(data);
+    }
+  }
+
+  function renderPipeline(data) {
+    const container = document.getElementById('pipeline');
+    const results = data.step_results || [];
+
+    // Build step list (use results + pending steps for total)
+    let html = '';
+    for (let i = 0; i < TOTAL_STEPS; i++) {
+      const stepNum = i + 1;
+      const result = results.find(r => r.step === stepNum);
+      let status = 'pending';
+      let skillName = `Step ${stepNum}`;
+      let duration = '';
+      let output = null;
+      let input = null;
+      let error = null;
+      let skippedReason = null;
+
+      if (result) {
+        status = result.status;
+        skillName = result.skill || skillName;
+        if (result.duration) duration = result.duration.toFixed(2) + 's';
+        if (result.output) output = result.output;
+        if (result.input) input = result.input;
+        if (result.error) error = result.error;
+        if (result.reason) skippedReason = result.reason;
+      } else if (data.status === 'running' && stepNum === data.current_step) {
+        status = 'running';
+      }
+
+      const iconMap = { pending: '&#9711;', running: '&#9881;', completed: '&#10003;', failed: '&#10007;', skipped: '&#8722;' };
+
+      html += `
+        <div class="pipeline-step">
+          <div class="step-icon ${status}">${iconMap[status] || '&#9711;'}</div>
+          <div class="step-card">
+            <div class="step-card-header" onclick="toggleStep(this)">
+              <div class="step-info">
+                <span class="step-number">#${stepNum}</span>
+                <span class="step-name">${escapeHtml(skillName)}</span>
+              </div>
+              <div class="step-right">
+                ${duration ? `<span class="step-duration">${duration}</span>` : ''}
+                <span class="step-status-dot dot-${status}"></span>
+                <span class="step-toggle">&#9660;</span>
+              </div>
+            </div>
+            <div class="step-card-body">
+              ${input ? `<div class="io-section"><div class="io-label">Input</div><div class="io-content">${escapeHtml(formatJSON(input))}</div></div>` : ''}
+              ${output ? `<div class="io-section"><div class="io-label">Output</div><div class="io-content">${escapeHtml(formatJSON(output))}</div></div>` : ''}
+              ${error ? `<div class="step-error">${escapeHtml(error)}</div>` : ''}
+              ${skippedReason ? `<div class="step-skipped-reason">${escapeHtml(skippedReason)}</div>` : ''}
+              ${status === 'pending' ? '<div class="step-skipped-reason">Waiting to execute...</div>' : ''}
+              ${status === 'running' ? '<div class="step-skipped-reason">Executing...</div>' : ''}
+            </div>
+          </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+  }
+
+  function renderFeedback(data) {
+    const results = (data.step_results || []).filter(r => r.status === 'completed');
+    if (results.length === 0) return;
+
+    const section = document.getElementById('feedback-section');
+    const container = document.getElementById('feedback-steps');
+    section.style.display = '';
+
+    let html = '';
+    results.forEach(r => {
+      html += `
+        <div class="feedback-row" data-step="${r.step}" data-skill="${escapeHtml(r.skill || '')}">
+          <span class="feedback-skill-name">#${r.step} ${escapeHtml(r.skill || 'Unknown')}</span>
+          <div class="feedback-btns">
+            <button class="fb-btn" onclick="submitFeedback(this, ${r.step}, 5)" title="Good output">&#128077;</button>
+            <button class="fb-btn" onclick="submitFeedback(this, ${r.step}, 1)" title="Bad output">&#128078;</button>
+          </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+  }
+
+  async function submitFeedback(btn, stepNum, rating) {
+    const row = btn.closest('.feedback-row');
+    const skillName = row.dataset.skill;
+
+    // Visual feedback
+    row.querySelectorAll('.fb-btn').forEach(b => { b.classList.remove('selected-good', 'selected-bad'); });
+    btn.classList.add(rating >= 4 ? 'selected-good' : 'selected-bad');
+
+    // Find the skill's execution log from step_results
+    // We'll submit feedback via the generic endpoint
+    try {
+      await fetch('/api/skill-feedback/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({
+          execution_id: EXECUTION_ID,
+          step: stepNum,
+          skill_name: skillName,
+          rating: rating,
+          comment: rating >= 4 ? 'Good output from flow run' : 'Poor output from flow run',
+        }),
+      });
+    } catch (e) {
+      console.error('Feedback submission failed:', e);
+    }
+  }
+
+  function toggleStep(header) {
+    const body = header.nextElementSibling;
+    const toggle = header.querySelector('.step-toggle');
+    body.classList.toggle('open');
+    toggle.classList.toggle('open');
+  }
+
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const str = typeof text === 'string' ? text : JSON.stringify(text);
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function formatJSON(obj) {
+    if (typeof obj === 'string') return obj;
+    try {
+      return JSON.stringify(obj, null, 2);
+    } catch (e) {
+      return String(obj);
+    }
+  }
+
+  // Initial load
+  fetchExecution();
+
+  // Poll if still running
+  if ('{{ execution.status }}' === 'running') {
+    pollInterval = setInterval(fetchExecution, 2000);
+  }
+</script>
+{% endblock %}

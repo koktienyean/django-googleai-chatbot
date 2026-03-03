@@ -58,8 +58,9 @@ django-googleai-chatbot/
 │   ├── skills/               NEW PACKAGE
 │   │   ├── __init__.py       NEW
 │   │   ├── builtin_skills.py NEW  (9 system-provided skills)
-│   │   ├── executor.py       NEW  (skill executor)
-│   │   └── flow_engine.py    NEW  (flow executor)
+│   │   ├── executor.py       NEW  (skill executor with auto-logging)
+│   │   ├── flow_engine.py    NEW  (flow executor)
+│   │   └── improver.py       NEW  (AI-powered skill improvement from feedback)
 │   ├── management/           NEW
 │   │   └── commands/
 │   │       ├── __init__.py   NEW
@@ -89,10 +90,10 @@ django-googleai-chatbot/
 |------|--------|-------------|------|
 | `requirements.txt` | EDIT | Add `ollama>=0.4.0` | 01 |
 | `.env` | EDIT | Add `OLLAMA_BASE_URL`, `OLLAMA_DEFAULT_MODEL` | 01 |
-| `chatbot/views.py` | REFACTOR | Extract tools to `chatbot/tools/`, add `ask_ollama()`, update `ask_ai()` router, update `api_list_models()`, add 8 new view functions | 01,02,03 |
-| `chatbot/models.py` | ENHANCE | Add 4 new models: `Skill`, `Flow`, `FlowStep`, `FlowExecution` | 03 |
+| `chatbot/views.py` | REFACTOR | Extract tools to `chatbot/tools/`, add `ask_ollama()`, update `ask_ai()` router, update `api_list_models()`, add new view functions | 01,02,03 |
+| `chatbot/models.py` | ENHANCE | Add 6 new models: `Skill`, `Flow`, `FlowStep`, `FlowExecution`, `SkillExecutionLog`, `SkillFeedback` | 03 |
 | `chatbot/urls.py` | ENHANCE | Add ~12 new URL patterns for Ollama, reports, skills, flows | 01,02,03 |
-| `chatbot/admin.py` | ENHANCE | Register 4 new models with admin classes | 03 |
+| `chatbot/admin.py` | ENHANCE | Register 6 new models with admin classes | 03 |
 | `chatbot/tools/__init__.py` | NEW | Package init | 01 |
 | `chatbot/tools/definitions.py` | NEW | All tool schemas (API-agnostic), ~20 tools | 01 |
 | `chatbot/tools/executors.py` | NEW | Tool dispatch - routes tool name to function | 01 |
@@ -101,8 +102,9 @@ django-googleai-chatbot/
 | `chatbot/tools/report_builder.py` | NEW | ReportBuilder class for formatted reports | 02 |
 | `chatbot/skills/__init__.py` | NEW | Package init | 03 |
 | `chatbot/skills/builtin_skills.py` | NEW | 9 system-provided skill definitions | 03 |
-| `chatbot/skills/executor.py` | NEW | SkillExecutor class | 03 |
+| `chatbot/skills/executor.py` | NEW | SkillExecutor class with auto-logging | 03 |
 | `chatbot/skills/flow_engine.py` | NEW | FlowEngine class | 03 |
+| `chatbot/skills/improver.py` | NEW | AI-powered skill improvement from feedback | 03 |
 | `chatbot/management/commands/setup_builtin_skills.py` | NEW | Management command to seed built-in skills | 03 |
 | `templates/chatbot.html` | ENHANCE | Add Ollama model group in dropdown, add "run flow" quick action | 01,03 |
 | `templates/settings.html` | ENHANCE | Add Ollama config section, connection test button | 01 |
@@ -129,6 +131,81 @@ django-googleai-chatbot/
 | Chat | `chatbot.html` | Model selector dropdown: add "Ollama (Local)" optgroup with dynamic models. Add "Run Flow" button in sidebar if user has flows. |
 | Settings | `settings.html` | Add "Ollama Configuration" card: base URL input, test connection button, model pull interface, status indicator (connected/disconnected). |
 
+### Skills Page Layout (3-Panel Dashboard)
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  Skills & Flows Dashboard                    [+ New Skill] [+ Flow] │
+├──────────────────┬───────────────────────────┬───────────────────────┤
+│  SKILL LIST      │  SKILL DETAIL / EDITOR    │  EXECUTION LOG        │
+│  (left panel)    │  (center panel)           │  (right panel)        │
+│                  │                           │                       │
+│  ┌────────────┐  │  Skill: "Summarize Text"  │  Recent Runs:         │
+│  │ query_tasks│  │  Type: generate  v3       │  ┌─────────────────┐  │
+│  │ ★★★★☆ 4.2 │  │  Executions: 47           │  │ 14:23 ✓ 120ms   │  │
+│  ├────────────┤  │  Success Rate: 94%        │  │ In: {text:"..."}│  │
+│  │ summarize  │  │  Avg Rating: ★★★☆☆ 3.1   │  │ Out: {sum:"..."}│  │
+│  │ ★★★☆☆ 3.1 │  │                           │  │ [👍 Rate] [👎]  │  │
+│  ├────────────┤  │  ┌─ Config ────────────┐  │  ├─────────────────┤  │
+│  │ classify   │  │  │ prompt_template:    │  │  │ 14:20 ✓ 95ms    │  │
+│  │ ★★★★★ 4.8 │  │  │ "Summarize: ${text}"│  │  │ In: {text:"..."}│  │
+│  └────────────┘  │  └────────────────────┘  │  │ Out: {sum:"..."}│  │
+│                  │                           │  │ Rated: ★★☆☆☆    │  │
+│  ── FLOWS ──     │  [Save] [Test] [Improve]  │  │ "too short"     │  │
+│  ┌────────────┐  │                           │  ├─────────────────┤  │
+│  │ Daily      │  │  ┌─ Improvement Hint ──┐  │  │ 14:18 ✗ Error   │  │
+│  │ Review     │  │  │ 3 negative feedbacks │  │  │ "timeout after  │  │
+│  │ 5 steps    │  │  │ say summaries too    │  │  │  30s"           │  │
+│  ├────────────┤  │  │ short. Suggest:      │  │  └─────────────────┘  │
+│  │ Weekly     │  │  │ add "detailed" to    │  │                       │
+│  │ Report     │  │  │ prompt template.     │  │  ── FEEDBACK STATS ── │
+│  │ 4 steps    │  │  │ [Apply Fix] [Dismiss]│  │  Avg: ★★★☆☆ 3.1      │
+│  └────────────┘  │  └─────────────────────┘  │  Total: 12 ratings    │
+└──────────────────┴───────────────────────────┴───────────────────────┘
+```
+
+**Left Panel** - Skill & flow list with name, type icon, avg rating stars, click to select
+**Center Panel** - Detail/editor with config, stats, Test/Improve buttons, AI improvement suggestions
+**Right Panel** - Execution log (input/output per call), feedback buttons, rating history
+
+### Flow Execution Page Layout
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Flow: "Daily Task Review"      Status: Running      │
+│  Started: 14:23:05             Step: 3 of 5         │
+├──────────────────────────────────────────────────────┤
+│  Step 1: query_tasks ──────────────── ✓ Complete     │
+│  ├─ Input: {status: "pending"}                       │
+│  ├─ Output: [{task: "Fix bug", priority: "high"}]    │
+│  ├─ Duration: 45ms                                   │
+│  └─ [Rate: ★★★★★]                                   │
+│       │                                              │
+│       ▼                                              │
+│  Step 2: query_tasks (overdue) ────── ✓ Complete     │
+│  ├─ Input: {is_overdue: true}                        │
+│  ├─ Output: [{task: "Deploy v2", days_overdue: 3}]   │
+│  ├─ Duration: 38ms                                   │
+│  └─ [Rate: ★★★★☆]                                   │
+│       │                                              │
+│       ▼                                              │
+│  Step 3: summarize_text ──────────── ⏳ Running...   │
+│  ├─ Input: {text: "$previous.output"}                │
+│  └─ [spinner]                                        │
+│       │                                              │
+│       ▼                                              │
+│  Step 4: classify_priority ───────── ○ Pending       │
+│       │                                              │
+│       ▼                                              │
+│  Step 5: generate_action_plan ────── ○ Pending       │
+├──────────────────────────────────────────────────────┤
+│  [Cancel Flow]                    [Rate All Steps]   │
+└──────────────────────────────────────────────────────┘
+```
+
+Each completed step shows full input/output and allows individual rating.
+Ratings feed back into SkillFeedback for self-improvement.
+
 ### UNCHANGED Pages (5 templates)
 
 | Page | Template | Why No Change |
@@ -141,7 +218,7 @@ django-googleai-chatbot/
 
 ---
 
-## New URL Patterns (+12)
+## New URL Patterns (+18)
 
 ```python
 # Plan 01: Ollama
@@ -161,22 +238,32 @@ path('api/skills/create/', views.api_skill_create, name='api_skill_create'),
 path('api/flows/', views.api_flows_list, name='api_flows_list'),
 path('api/flows/create/', views.api_flow_create, name='api_flow_create'),
 path('api/flows/<int:flow_id>/run/', views.api_flow_run, name='api_flow_run'),
+
+# Plan 03: Execution Logs & Feedback
+path('api/skill-logs/<int:skill_id>/', views.api_skill_logs, name='api_skill_logs'),
+path('api/skill-logs/<int:log_id>/feedback/', views.api_skill_feedback, name='api_skill_feedback'),
+path('api/skills/<int:skill_id>/stats/', views.api_skill_stats, name='api_skill_stats'),
+path('api/skills/<int:skill_id>/improve/', views.api_skill_improve, name='api_skill_improve'),
+path('api/skills/<int:skill_id>/apply-improvement/', views.api_skill_apply_improvement, name='api_skill_apply_improvement'),
+path('flows/<int:flow_id>/run/', views.flow_run_page, name='flow_run_page'),
 ```
 
 ---
 
-## New Django Models (+4)
+## New Django Models (+6)
 
 | Model | Fields | Related To | Purpose |
 |-------|--------|-----------|---------|
-| `Skill` | name, description, skill_type, config (JSON), input_schema (JSON), output_schema (JSON), is_system | User | Reusable AI action definition |
+| `Skill` | name, description, skill_type, config (JSON), input_schema (JSON), output_schema (JSON), is_system, version, avg_rating, total_executions, success_rate, last_improved_at | User | Reusable AI action definition with improvement tracking |
 | `Flow` | name, description, is_active, trigger (JSON) | User | Sequential pipeline of skills |
 | `FlowStep` | order, input_mapping (JSON), config_override (JSON), condition (JSON) | Flow, Skill | Single step in a flow |
 | `FlowExecution` | status, current_step, total_steps, step_results (JSON), triggered_by, error_message | Flow, User, ChatSession | Tracks one execution run |
+| `SkillExecutionLog` | input_data (JSON), output_data (JSON), model_used, status, duration_ms, error_message, executed_at | User, Skill, FlowExecution, ChatSession | Records every skill call with full input/output |
+| `SkillFeedback` | rating (1-5), comment, expected_output, applied, applied_at | User, SkillExecutionLog, Skill | User feedback on skill results for self-improvement |
 
 ---
 
-## New View Functions (+8)
+## New View Functions (+18)
 
 | View Function | Method | Returns | URL | Plan |
 |---------------|--------|---------|-----|------|
@@ -192,6 +279,12 @@ path('api/flows/<int:flow_id>/run/', views.api_flow_run, name='api_flow_run'),
 | `api_flows_list` | GET | JsonResponse | `/api/flows/` | 03 |
 | `api_flow_create` | POST | JsonResponse | `/api/flows/create/` | 03 |
 | `api_flow_run` | POST | JsonResponse | `/api/flows/<id>/run/` | 03 |
+| `api_skill_logs` | GET | JsonResponse | `/api/skill-logs/<skill_id>/` | 03 |
+| `api_skill_feedback` | POST | JsonResponse | `/api/skill-logs/<log_id>/feedback/` | 03 |
+| `api_skill_stats` | GET | JsonResponse | `/api/skills/<skill_id>/stats/` | 03 |
+| `api_skill_improve` | POST | JsonResponse | `/api/skills/<skill_id>/improve/` | 03 |
+| `api_skill_apply_improvement` | POST | JsonResponse | `/api/skills/<skill_id>/apply-improvement/` | 03 |
+| `flow_run_page` | GET | render template | `/flows/<flow_id>/run/` | 03 |
 
 ---
 
@@ -241,7 +334,7 @@ python manage.py runserver
 
 ## Implementation Task List (Ordered)
 
-### PHASE A: Tool Refactor (prerequisite for everything)
+### PHASE A: Tool Refactor (prerequisite for everything) - COMPLETED
 > Extract the duplicated tool code from the 2151-line views.py into a clean package
 
 | # | Task | Files | Est. Lines |
@@ -253,7 +346,7 @@ python manage.py runserver
 | A5 | Refactor `ask_claude()` in views.py to use `chatbot/tools/` instead of inline definitions | EDIT views.py | net -400 |
 | A6 | Refactor `ask_gemini_api()` in views.py to use `chatbot/tools/` instead of inline definitions | EDIT views.py | net -250 |
 
-### PHASE B: Ollama Integration (Plan 01)
+### PHASE B: Ollama Integration (Plan 01) - COMPLETED
 
 | # | Task | Files | Est. Lines |
 |---|------|-------|-----------|
@@ -269,7 +362,7 @@ python manage.py runserver
 | B10 | Enhance `chatbot.html` - add Ollama optgroup in model selector | EDIT chatbot.html | ~15 |
 | B11 | Enhance `settings.html` - add Ollama config section | EDIT settings.html | ~80 |
 
-### PHASE C: Data Query & Reporting (Plan 02)
+### PHASE C: Data Query & Reporting (Plan 02) - COMPLETED
 
 | # | Task | Files | Est. Lines |
 |---|------|-------|-----------|
@@ -284,26 +377,31 @@ python manage.py runserver
 | C9 | Add report URL patterns to urls.py | EDIT urls.py | 4 |
 | C10 | Create `templates/reports.html` - report viewer page | NEW | ~200 |
 
-### PHASE D: Skill & Flow Engine (Plan 03)
+### PHASE D: Skill & Flow Engine (Plan 03) - COMPLETED
 
 | # | Task | Files | Est. Lines |
 |---|------|-------|-----------|
-| D1 | Add Skill, Flow, FlowStep, FlowExecution models to models.py | EDIT models.py | ~130 |
+| D1 | Add Skill, Flow, FlowStep, FlowExecution, SkillExecutionLog, SkillFeedback models to models.py | EDIT models.py | ~250 |
 | D2 | Run `makemigrations` + `migrate` | CLI | — |
 | D3 | Create `chatbot/skills/__init__.py` | NEW | 5 |
 | D4 | Create `chatbot/skills/builtin_skills.py` - 9 system skills | NEW | ~100 |
-| D5 | Create `chatbot/skills/executor.py` - SkillExecutor class | NEW | ~80 |
+| D5 | Create `chatbot/skills/executor.py` - SkillExecutor with auto-logging to SkillExecutionLog | NEW | ~120 |
 | D6 | Create `chatbot/skills/flow_engine.py` - FlowEngine class | NEW | ~120 |
-| D7 | Create `chatbot/management/commands/setup_builtin_skills.py` | NEW | ~60 |
-| D8 | Add skill/flow tools to definitions.py (create_skill, create_flow, run_flow, list_skills, list_flows) | EDIT definitions.py | ~80 |
-| D9 | Wire skill/flow tools in executors.py | EDIT executors.py | ~30 |
-| D10 | Add `skills_page()` view | EDIT views.py | ~10 |
-| D11 | Add skill/flow API views (api_skills_list, api_skill_create, api_flows_list, api_flow_create, api_flow_run) | EDIT views.py | ~100 |
-| D12 | Add skill/flow URL patterns to urls.py | EDIT urls.py | 6 |
-| D13 | Create `templates/skills.html` - skill/flow management page | NEW | ~300 |
-| D14 | Create `templates/flow_run.html` - flow execution display | NEW | ~150 |
-| D15 | Register Skill, Flow, FlowStep, FlowExecution in admin.py | EDIT admin.py | ~120 |
-| D16 | Enhance `chatbot.html` - add "Run Flow" quick action in sidebar | EDIT chatbot.html | ~20 |
+| D7 | Create `chatbot/skills/improver.py` - AI-powered skill improvement from feedback analysis | NEW | ~80 |
+| D8 | Create `chatbot/management/commands/setup_builtin_skills.py` | NEW | ~60 |
+| D9 | Add skill/flow/feedback tools to definitions.py (create_skill, create_flow, run_flow, list_skills, list_flows, submit_feedback, get_skill_stats, improve_skill) | EDIT definitions.py | ~120 |
+| D10 | Wire skill/flow/feedback tools in executors.py | EDIT executors.py | ~50 |
+| D11 | Add `skills_page()` view | EDIT views.py | ~10 |
+| D12 | Add skill/flow API views (api_skills_list, api_skill_create, api_flows_list, api_flow_create, api_flow_run) | EDIT views.py | ~100 |
+| D13 | Add execution log API views (api_skill_logs, api_skill_stats) | EDIT views.py | ~50 |
+| D14 | Add feedback API views (api_skill_feedback) | EDIT views.py | ~40 |
+| D15 | Add improvement API views (api_skill_improve, api_skill_apply_improvement) | EDIT views.py | ~50 |
+| D16 | Add `flow_run_page()` view | EDIT views.py | ~15 |
+| D17 | Add all skill/flow/log/feedback URL patterns to urls.py | EDIT urls.py | 12 |
+| D18 | Create `templates/skills.html` - 3-panel skill dashboard (list + detail + logs/feedback) | NEW | ~400 |
+| D19 | Create `templates/flow_run.html` - flow execution progress with per-step feedback | NEW | ~200 |
+| D20 | Register Skill, Flow, FlowStep, FlowExecution, SkillExecutionLog, SkillFeedback in admin.py | EDIT admin.py | ~180 |
+| D21 | Enhance `chatbot.html` - add "Run Flow" quick action in sidebar | EDIT chatbot.html | ~20 |
 
 ---
 
@@ -311,14 +409,14 @@ python manage.py runserver
 
 | Category | Count |
 |----------|-------|
-| New Python files | 12 |
+| New Python files | 13 |
 | New template files | 3 |
 | Enhanced existing files | 8 |
-| New Django models | 4 |
-| New URL patterns | 12 |
-| New view functions | 12 |
-| New AI tools (for LLM function calling) | 7 |
-| Total tasks | 43 |
+| New Django models | 6 |
+| New URL patterns | 18 |
+| New view functions | 18 |
+| New AI tools (for LLM function calling) | 10 |
+| Total tasks | 48 |
 | New pages (web) | 3 (reports, skills, flow_run) |
 | Enhanced pages (web) | 2 (chatbot, settings) |
 | Unchanged pages | 5 |

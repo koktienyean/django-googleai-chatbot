@@ -396,6 +396,8 @@
           <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
           <option value="gemini-pro">Gemini Pro</option>
         </optgroup>
+        <optgroup id="ollama-models-group" label="Ollama (Local) - Free & Private">
+        </optgroup>
       </select>
       <small>Select the AI model to use as default for new conversations. You can also change it per-conversation from the chat interface.</small>
     </div>
@@ -414,18 +416,33 @@
   </div>
 
   <div class="settings-section">
+    <h2>Ollama (Local AI)</h2>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+      <span id="ollama-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); display: inline-block;"></span>
+      <span id="ollama-status-text" style="font-size: 14px; color: var(--text-secondary);">Checking Ollama status...</span>
+      <button id="ollama-refresh-btn" class="btn btn-secondary" style="margin-left: auto; padding: 6px 14px; font-size: 11px;">Refresh</button>
+    </div>
+    <div id="ollama-models-info" style="font-size: 13px; color: var(--text-muted);">
+    </div>
+    <small style="display: block; margin-top: 12px;">
+      Ollama lets you run AI models locally for free. Install from <strong>ollama.com</strong>, then run <code style="background: rgba(0,217,255,0.1); padding: 2px 6px; border-radius: 4px;">ollama pull llama3.2</code> to get started.
+    </small>
+  </div>
+
+  <div class="settings-section">
     <h2>About</h2>
     <p style="margin: 0; color: #6c757d; font-size: 14px;">
-      AI Chatbot v2.0 - Dual API Support<br>
-      <strong>Powered by:</strong> Claude (Anthropic) & Gemini (Google)<br>
+      AI Chatbot v3.0 - Multi-Backend AI<br>
+      <strong>Powered by:</strong> Claude (Anthropic), Gemini (Google) & Ollama (Local)<br>
       <br>
       <strong>Features:</strong>
       <ul style="margin: 12px 0 0 20px; padding: 0; color: #6c757d; font-size: 13px;">
-        <li>Chat with multiple AI models</li>
+        <li>Chat with multiple AI models (cloud & local)</li>
         <li>Switch models per conversation</li>
         <li>Task management and productivity tools</li>
         <li>Calendar and data visualization</li>
         <li>Email notifications and recurring tasks</li>
+        <li>Local AI via Ollama (free, private, offline)</li>
       </ul>
       <br>
       <strong>Current User:</strong> {{ user.username }}
@@ -450,6 +467,57 @@
     'gemini-1.5-pro': 'Gemini 1.5 Pro - More capable for complex tasks.',
     'gemini-pro': 'Gemini Pro - Reliable and accurate model.'
   };
+
+  // Ollama status check
+  async function checkOllamaStatus() {
+    const dot = document.getElementById('ollama-status-dot');
+    const text = document.getElementById('ollama-status-text');
+    const info = document.getElementById('ollama-models-info');
+    const ollamaGroup = document.getElementById('ollama-models-group');
+
+    try {
+      const response = await fetch('/api/ollama/status/');
+      const data = await response.json();
+
+      if (data.status === 'connected') {
+        dot.style.background = 'var(--color-accent)';
+        text.textContent = `Connected to ${data.base_url}`;
+
+        if (data.models && data.models.length > 0) {
+          info.innerHTML = `<strong style="color: var(--color-primary);">${data.models.length} model(s) available:</strong> ${data.models.join(', ')}`;
+
+          // Populate Ollama models in dropdown
+          ollamaGroup.innerHTML = '';
+          data.models.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = 'ollama:' + m;
+            opt.textContent = m + ' (Local)';
+            modelDescriptions['ollama:' + m] = `${m} - Local Ollama model. Free, private, runs on your machine.`;
+            ollamaGroup.appendChild(opt);
+          });
+        } else {
+          info.innerHTML = data.message || 'No models installed.';
+          ollamaGroup.innerHTML = '<option disabled>No models installed</option>';
+        }
+      } else if (data.status === 'unavailable') {
+        dot.style.background = 'var(--text-muted)';
+        text.textContent = 'Ollama library not installed';
+        info.innerHTML = 'Install with: <code style="background: rgba(0,217,255,0.1); padding: 2px 6px; border-radius: 4px;">pip install ollama</code>';
+        ollamaGroup.innerHTML = '<option disabled>Ollama not available</option>';
+      } else {
+        dot.style.background = 'var(--color-secondary)';
+        text.textContent = 'Ollama offline';
+        info.innerHTML = data.message || 'Cannot connect to Ollama.';
+        ollamaGroup.innerHTML = '<option disabled>Ollama offline</option>';
+      }
+    } catch (e) {
+      dot.style.background = 'var(--color-secondary)';
+      text.textContent = 'Cannot check Ollama status';
+      ollamaGroup.innerHTML = '<option disabled>Status unknown</option>';
+    }
+  }
+
+  document.getElementById('ollama-refresh-btn').addEventListener('click', checkOllamaStatus);
 
   // Set up model selection
   function initializeSettings() {
@@ -570,6 +638,9 @@
   }
 
   // Initialize settings when page loads
-  document.addEventListener('DOMContentLoaded', initializeSettings);
+  document.addEventListener('DOMContentLoaded', () => {
+    initializeSettings();
+    checkOllamaStatus();
+  });
 </script>
 {% endblock %}

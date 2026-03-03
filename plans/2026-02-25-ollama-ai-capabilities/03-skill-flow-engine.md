@@ -499,21 +499,393 @@ class Command(BaseCommand):
 }
 ```
 
+---
+
+## Phase 5: Execution Logging & Observability
+
+Every skill call is recorded so both user and AI can review what happened, spot patterns, and improve.
+
+### 5.1 New Model: SkillExecutionLog
+
+```python
+class SkillExecutionLog(models.Model):
+    """Records every single skill call with full input/output for review"""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='skill_logs')
+    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name='execution_logs')
+
+    # What was asked and what came back
+    input_data = models.JSONField(default=dict, help_text="The input passed to the skill")
+    output_data = models.JSONField(default=dict, help_text="The result returned by the skill")
+
+    # Execution context
+    flow_execution = models.ForeignKey(FlowExecution, null=True, blank=True, on_delete=models.SET_NULL,
+                                        related_name='skill_logs', help_text="If run as part of a flow")
+    chat_session = models.ForeignKey(ChatSession, null=True, blank=True, on_delete=models.SET_NULL)
+    model_used = models.CharField(max_length=100, blank=True, help_text="AI model used (if generate type)")
+
+    # Performance
+    status = models.CharField(max_length=20, choices=[
+        ('success', 'Success'), ('error', 'Error'), ('timeout', 'Timeout')
+    ], default='success')
+    duration_ms = models.IntegerField(default=0, help_text="Execution time in milliseconds")
+    error_message = models.TextField(blank=True)
+
+    # Timestamps
+    executed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-executed_at']
+        indexes = [
+            models.Index(fields=['user', '-executed_at']),
+            models.Index(fields=['skill', '-executed_at']),
+            models.Index(fields=['status']),
+        ]
+
+    def __str__(self):
+        return f'{self.skill.name} - {self.status} - {self.executed_at:%Y-%m-%d %H:%M}'
+```
+
+### 5.2 Logging in SkillExecutor
+
+```python
+# chatbot/skills/executor.py - updated
+import time
+
+class SkillExecutor:
+    def execute(self, skill, input_data=None):
+        start = time.time()
+        log = SkillExecutionLog(
+            user=self.user,
+            skill=skill,
+            input_data=input_data or {},
+            model_used=self.ai_model if skill.skill_type == 'generate' else '',
+        )
+        try:
+            output = self._dispatch(skill, input_data)
+            log.output_data = output if isinstance(output, dict) else {'output': str(output)}
+            log.status = 'success'
+            log.duration_ms = int((time.time() - start) * 1000)
+            log.save()
+            return output
+        except Exception as e:
+            log.status = 'error'
+            log.error_message = str(e)
+            log.duration_ms = int((time.time() - start) * 1000)
+            log.save()
+            raise
+```
+
+---
+
+## Phase 6: User Feedback & Self-Improvement
+
+Users can rate skill outputs and give feedback. The system uses this to improve skill prompts and configs over time.
+
+### 6.1 New Model: SkillFeedback
+
+```python
+class SkillFeedback(models.Model):
+    """User feedback on a skill execution - drives self-improvement"""
+
+    RATING_CHOICES = [
+        (1, 'Poor'),
+        (2, 'Below Average'),
+        (3, 'Average'),
+        (4, 'Good'),
+        (5, 'Excellent'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='skill_feedback')
+    execution_log = models.OneToOneField(SkillExecutionLog, on_delete=models.CASCADE,
+                                          related_name='feedback')
+    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name='feedback')
+
+    # User rating and comment
+    rating = models.IntegerField(choices=RATING_CHOICES)
+    comment = models.TextField(blank=True, help_text="What was wrong or could be better?")
+
+    # Suggested correction
+    expected_output = models.TextField(blank=True,
+        help_text="What should the output have been? (optional)")
+
+    # Did this feedback lead to a skill update?
+    applied = models.BooleanField(default=False,
+        help_text="Whether this feedback was used to update the skill")
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['skill', '-created_at']),
+            models.Index(fields=['skill', 'rating']),
+            models.Index(fields=['applied']),
+        ]
+
+    def __str__(self):
+        return f'{self.skill.name} - {self.get_rating_display()} - {self.user.username}'
+```
+
+### 6.2 Skill Improvement Stats (computed fields on Skill)
+
+```python
+# Add to Skill model
+class Skill(models.Model):
+    # ... existing fields ...
+
+    # Improvement tracking
+    version = models.IntegerField(default=1, help_text="Increments when skill config is updated from feedback")
+    avg_rating = models.FloatField(default=0.0, help_text="Cached average feedback rating")
+    total_executions = models.IntegerField(default=0, help_text="Cached total execution count")
+    success_rate = models.FloatField(default=0.0, help_text="Cached success rate percentage")
+    last_improved_at = models.DateTimeField(null=True, blank=True)
+
+    def update_stats(self):
+        """Recalculate cached stats from logs and feedback"""
+        from django.db.models import Avg, Count, Q
+        logs = self.execution_logs.all()
+        self.total_executions = logs.count()
+        if self.total_executions > 0:
+            self.success_rate = logs.filter(status='success').count() / self.total_executions * 100
+        feedback = self.feedback.all()
+        if feedback.exists():
+            self.avg_rating = feedback.aggregate(avg=Avg('rating'))['avg'] or 0.0
+        self.save()
+```
+
+### 6.3 Self-Improvement Flow (AI-assisted)
+
+When a skill has low ratings, the AI can suggest improvements:
+
+```python
+# chatbot/skills/improver.py
+
+class SkillImprover:
+    def __init__(self, user, ai_model='llama3.2'):
+        self.user = user
+        self.ai_model = ai_model
+
+    def suggest_improvement(self, skill):
+        """Analyze feedback and suggest config/prompt improvements"""
+        # Get recent negative feedback
+        bad_feedback = SkillFeedback.objects.filter(
+            skill=skill, rating__lte=2
+        ).order_by('-created_at')[:10]
+
+        if not bad_feedback.exists():
+            return None
+
+        # Build analysis prompt
+        prompt = f"""Analyze this AI skill and its feedback to suggest improvements.
+
+Skill: {skill.name}
+Type: {skill.skill_type}
+Current Config: {skill.config}
+Version: {skill.version}
+Avg Rating: {skill.avg_rating:.1f}/5
+Success Rate: {skill.success_rate:.0f}%
+
+Recent negative feedback:
+"""
+        for fb in bad_feedback:
+            log = fb.execution_log
+            prompt += f"""
+---
+Input: {log.input_data}
+Output: {log.output_data}
+Rating: {fb.rating}/5
+Comment: {fb.comment}
+Expected: {fb.expected_output or 'Not specified'}
+"""
+
+        prompt += """
+Based on the feedback, suggest specific changes to improve this skill:
+1. What patterns do you see in the failures?
+2. How should the config/prompt be updated?
+3. Return the improved config as JSON."""
+
+        return ask_ai(prompt, model=self.ai_model, user=self.user)
+
+    def apply_improvement(self, skill, new_config):
+        """Apply suggested improvement and bump version"""
+        skill.config = new_config
+        skill.version += 1
+        skill.last_improved_at = timezone.now()
+        skill.save()
+
+        # Mark related feedback as applied
+        SkillFeedback.objects.filter(
+            skill=skill, applied=False
+        ).update(applied=True, applied_at=timezone.now())
+```
+
+### 6.4 AI Tools for Feedback & Improvement
+
+```python
+tools = [
+    {
+        "name": "submit_skill_feedback_tool",
+        "description": "Submit feedback on a skill execution result",
+        "input_schema": {
+            "properties": {
+                "execution_log_id": {"type": "integer"},
+                "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+                "comment": {"type": "string"},
+                "expected_output": {"type": "string"}
+            },
+            "required": ["execution_log_id", "rating"]
+        }
+    },
+    {
+        "name": "get_skill_stats_tool",
+        "description": "Get execution stats and feedback summary for a skill",
+        "input_schema": {
+            "properties": {
+                "skill_name": {"type": "string"}
+            },
+            "required": ["skill_name"]
+        }
+    },
+    {
+        "name": "improve_skill_tool",
+        "description": "Analyze feedback and suggest improvements for a skill",
+        "input_schema": {
+            "properties": {
+                "skill_name": {"type": "string"},
+                "auto_apply": {"type": "boolean", "default": false}
+            },
+            "required": ["skill_name"]
+        }
+    }
+]
+```
+
+---
+
+## Skills Page Design (`templates/skills.html`)
+
+### Layout: 3-Panel Dashboard
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Skills & Flows Dashboard                    [+ New Skill] [+ New Flow]  │
+├──────────────────┬───────────────────────────┬───────────────────┤
+│                  │                           │                   │
+│  SKILL LIST      │  SKILL DETAIL / EDITOR    │  EXECUTION LOG    │
+│  (left panel)    │  (center panel)           │  (right panel)    │
+│                  │                           │                   │
+│  ┌────────────┐  │  Skill: "Summarize Text"  │  Recent Runs:     │
+│  │ query_tasks│  │  Type: generate           │  ┌─────────────┐  │
+│  │ ★★★★☆ 4.2 │  │  Version: 3               │  │ 14:23 ✓     │  │
+│  ├────────────┤  │  Executions: 47           │  │ In: {text..} │  │
+│  │ summarize  │  │  Success Rate: 94%        │  │ Out: {sum..} │  │
+│  │ ★★★☆☆ 3.1 │  │  Avg Rating: ★★★☆☆ 3.1   │  │ [👍] [👎]    │  │
+│  ├────────────┤  │                           │  ├─────────────┤  │
+│  │ classify   │  │  ┌─ Config ─────────────┐ │  │ 14:20 ✓     │  │
+│  │ ★★★★★ 4.8 │  │  │ prompt_template:     │ │  │ In: {text..} │  │
+│  ├────────────┤  │  │ "Summarize the       │ │  │ Out: {sum..} │  │
+│  │ create_task│  │  │  following: ${text}"  │ │  │ [👍] [👎]    │  │
+│  │ ★★★★☆ 4.0 │  │  │ model: "llama3.2"    │ │  ├─────────────┤  │
+│  └────────────┘  │  └──────────────────────┘ │  │ 14:18 ✗     │  │
+│                  │                           │  │ Error: ...   │  │
+│  ── FLOWS ──     │  [Save] [Test] [Improve]  │  │ Duration: 2s │  │
+│  ┌────────────┐  │                           │  └─────────────┘  │
+│  │ Daily      │  │  ┌─ Improvement Hints ──┐ │                   │
+│  │ Review     │  │  │ 3 negative feedbacks  │ │  ── FEEDBACK ──   │
+│  │ 5 steps    │  │  │ found. Users say      │ │  Avg: ★★★☆☆ 3.1  │
+│  ├────────────┤  │  │ summaries are too     │ │  Total: 12 ratings│
+│  │ Weekly     │  │  │ short. Suggest:       │ │                   │
+│  │ Report     │  │  │ update prompt to add  │ │  Recent:          │
+│  │ 4 steps    │  │  │ "detailed" keyword.   │ │  ★★☆☆☆ "too short"│
+│  └────────────┘  │  │ [Apply Fix] [Dismiss] │ │  ★★★★☆ "good"     │
+│                  │  └──────────────────────┘ │  ★☆☆☆☆ "wrong fmt" │
+│                  │                           │                   │
+└──────────────────┴───────────────────────────┴───────────────────┘
+```
+
+### Left Panel: Skill & Flow List
+- Lists all skills (system + user-created) with name, type icon, avg rating stars
+- Lists all flows with name and step count
+- Click to select -> loads detail in center panel
+- Filter tabs: All | Query | Generate | Transform | Action
+- Sort by: Name | Rating | Executions | Recent
+
+### Center Panel: Skill Detail / Editor
+- **View mode**: Shows skill name, type, version, stats (executions, success rate, avg rating)
+- **Edit mode**: Edit config JSON, prompt template, description
+- **Test button**: Run skill with sample input, shows output inline
+- **Improve button**: Triggers AI analysis of negative feedback, shows suggestion
+- **Apply Fix button**: Applies AI-suggested improvement, bumps version
+- For flows: Shows step list as visual pipeline with arrows between steps
+
+### Right Panel: Execution Log + Feedback
+- Chronological list of recent executions for selected skill
+- Each log entry shows:
+  - Timestamp + status icon (✓ success, ✗ error, ⏱ timeout)
+  - Collapsible input/output data (JSON formatted)
+  - Duration in ms
+  - Feedback buttons: thumbs up / thumbs down / star rating
+  - If feedback given: shows rating + comment
+- Filter: All | Success | Error | Low-rated
+
+### Flow Execution View (`templates/flow_run.html`)
+```
+┌──────────────────────────────────────────────────────┐
+│  Flow: "Daily Task Review"        Status: Running    │
+│  Started: 14:23:05               Step: 3 of 5       │
+├──────────────────────────────────────────────────────┤
+│                                                      │
+│  Step 1: query_tasks ──────────────── ✓ Complete     │
+│  ├─ Input: {status: "pending"}                       │
+│  ├─ Output: [{task: "Fix bug", priority: "high"}...] │
+│  ├─ Duration: 45ms                                   │
+│  └─ [👍 5] [👎]                                      │
+│       │                                              │
+│       ▼                                              │
+│  Step 2: query_tasks (overdue) ────── ✓ Complete     │
+│  ├─ Input: {status: "pending", is_overdue: true}     │
+│  ├─ Output: [{task: "Deploy v2", days_overdue: 3}]   │
+│  ├─ Duration: 38ms                                   │
+│  └─ [👍 4] [👎]                                      │
+│       │                                              │
+│       ▼                                              │
+│  Step 3: summarize_text ──────────── ⏳ Running...   │
+│  ├─ Input: {text: "$previous.output"}                │
+│  └─ [spinner animation]                              │
+│       │                                              │
+│       ▼                                              │
+│  Step 4: classify_priority ───────── ○ Pending       │
+│       │                                              │
+│       ▼                                              │
+│  Step 5: generate_action_plan ────── ○ Pending       │
+│                                                      │
+├──────────────────────────────────────────────────────┤
+│  [Cancel Flow]                    [Rate All Steps]   │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
 ## File Changes Summary
 
 | File | Change |
 |------|--------|
-| `chatbot/models.py` | Add `Skill`, `Flow`, `FlowStep`, `FlowExecution` models |
+| `chatbot/models.py` | Add `Skill`, `Flow`, `FlowStep`, `FlowExecution`, `SkillExecutionLog`, `SkillFeedback` models |
 | `chatbot/skills/__init__.py` (new) | Skills package |
-| `chatbot/skills/executor.py` (new) | Skill executor |
+| `chatbot/skills/executor.py` (new) | Skill executor with automatic logging |
 | `chatbot/skills/flow_engine.py` (new) | Flow engine |
 | `chatbot/skills/builtin_skills.py` (new) | System-provided skill definitions |
-| `chatbot/tools/definitions.py` | Add skill/flow management tools |
-| `chatbot/tools/executors.py` | Wire up skill/flow tools |
-| `chatbot/urls.py` | Add `/api/skills/`, `/api/flows/`, `/api/flows/<id>/run/` |
-| `chatbot/views.py` | Add skill/flow API views |
-| `chatbot/admin.py` | Register Skill, Flow, FlowStep, FlowExecution |
-| `chatbot/management/commands/` (new) | Scheduled flow runner |
+| `chatbot/skills/improver.py` (new) | AI-powered skill improvement from feedback |
+| `chatbot/tools/definitions.py` | Add skill/flow/feedback management tools |
+| `chatbot/tools/executors.py` | Wire up skill/flow/feedback tools |
+| `chatbot/urls.py` | Add `/api/skills/`, `/api/flows/`, `/api/flows/<id>/run/`, `/api/skill-logs/`, `/api/skill-feedback/` |
+| `chatbot/views.py` | Add skill/flow/feedback API views |
+| `chatbot/admin.py` | Register Skill, Flow, FlowStep, FlowExecution, SkillExecutionLog, SkillFeedback |
+| `chatbot/management/commands/` (new) | Scheduled flow runner, setup_builtin_skills |
+| `templates/skills.html` (new) | 3-panel skill/flow management dashboard |
+| `templates/flow_run.html` (new) | Flow execution progress with step feedback |
 
 ## Risks & Considerations
 
@@ -524,6 +896,9 @@ class Command(BaseCommand):
 5. **Performance** - Long flows with AI calls at each step could be slow. Consider async execution
 6. **LLM reliability** - AI-generated flow definitions may be malformed. Validate before saving
 7. **Dependency** - Requires Plan 01 (Ollama) for local execution and Plan 02 (query engine) for data skills
+8. **Log volume** - Execution logs can grow fast. Consider retention policy (auto-delete logs older than 90 days)
+9. **Feedback bias** - Users tend to only give feedback when things go wrong. Track "no feedback" as implicit positive
+10. **Auto-improvement safety** - AI-suggested improvements should always require user approval before applying
 
 ## Implementation Order
 
@@ -532,4 +907,6 @@ Phase 1: Models + Skill executor + built-in skills     (foundation)
 Phase 2: Flow engine + flow executor                    (core feature)
 Phase 3: AI tools for creating/running flows via chat   (UX)
 Phase 4: Scheduled flows                                (automation)
+Phase 5: Execution logging + observability              (visibility)
+Phase 6: User feedback + self-improvement               (learning loop)
 ```

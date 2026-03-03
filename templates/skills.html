@@ -1,0 +1,473 @@
+{% extends 'base.html' %}
+
+{% block title %}Skills & Flows - AI Chatbot{% endblock %}
+
+{% block styles %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --color-primary: #00d9ff; --color-primary-dark: #00a8cc;
+    --color-secondary: #ff006e; --color-accent: #06d6a0; --color-warning: #ffd60a;
+    --bg-primary: #0f1419; --bg-secondary: #1a1f2e; --bg-tertiary: #2d3748;
+    --text-primary: #e0e0e0; --text-secondary: #a0a0a0; --text-muted: #707070; --text-inverse: #0f1419;
+    --border-primary: rgba(0, 217, 255, 0.2);
+    --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.4);
+    --transition-smooth: 0.3s ease;
+    --font-display: 'Playfair Display', serif; --font-body: 'Outfit', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body, html { height: 100%; font-family: var(--font-body); background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, #0a0e1a 100%); color: var(--text-primary); }
+
+  .skills-layout { display: flex; flex-direction: column; height: 100vh; }
+  .skills-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-primary); }
+  .skills-header h1 { font-family: var(--font-display); font-size: 24px; background: linear-gradient(135deg, var(--color-primary), var(--color-secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header-actions { display: flex; gap: 8px; }
+  .header-actions a, .header-actions button { padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; text-decoration: none; border: none; transition: all var(--transition-smooth); }
+  .btn-primary-sm { background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark)); color: var(--text-inverse); }
+  .btn-accent-sm { background: rgba(6,214,160,0.15); color: var(--color-accent); border: 1px solid rgba(6,214,160,0.3) !important; }
+  .btn-secondary-sm { background: rgba(0,217,255,0.1); color: var(--color-primary); border: 1px solid var(--border-primary) !important; }
+
+  .panels { display: grid; grid-template-columns: 260px 1fr 320px; flex: 1; overflow: hidden; }
+  .panel { border-right: 1px solid var(--border-primary); overflow-y: auto; padding: 16px; }
+  .panel:last-child { border-right: none; }
+  .panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 12px; }
+
+  /* Left panel - skill/flow list */
+  .filter-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+  .filter-tab { padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; background: rgba(0,217,255,0.05); color: var(--text-muted); border: 1px solid transparent; transition: all 0.2s; }
+  .filter-tab.active { background: rgba(0,217,255,0.15); color: var(--color-primary); border-color: var(--border-primary); }
+
+  .skill-item, .flow-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 6px; transition: all 0.2s; border: 1px solid transparent; }
+  .skill-item:hover, .flow-item:hover { background: rgba(0,217,255,0.05); border-color: var(--border-primary); }
+  .skill-item.selected, .flow-item.selected { background: rgba(0,217,255,0.1); border-color: var(--color-primary); }
+  .skill-item .skill-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+  .skill-item .skill-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: flex; justify-content: space-between; }
+  .skill-item .skill-stars { color: var(--color-warning); font-size: 11px; }
+  .flow-item .flow-name { font-size: 13px; font-weight: 500; }
+  .flow-item .flow-meta { font-size: 11px; color: var(--text-muted); }
+  .section-divider { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin: 16px 0 8px 0; padding-top: 12px; border-top: 1px solid var(--border-primary); letter-spacing: 1px; }
+  .badge-system { font-size: 9px; background: rgba(0,217,255,0.15); color: var(--color-primary); padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+
+  /* Center panel - detail */
+  .detail-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+  .detail-header h2 { font-size: 20px; font-weight: 600; }
+  .detail-type { font-size: 12px; color: var(--color-primary); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: rgba(0,217,255,0.05); border-radius: 8px; padding: 12px; text-align: center; }
+  .stat-value { font-size: 20px; font-weight: 700; font-family: var(--font-mono); color: var(--color-primary); }
+  .stat-label { font-size: 10px; text-transform: uppercase; color: var(--text-muted); margin-top: 2px; }
+  .config-section { margin-top: 16px; }
+  .config-section label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); font-weight: 600; display: block; margin-bottom: 6px; }
+  .config-editor { width: 100%; min-height: 120px; background: rgba(15,20,25,0.8); border: 1px solid var(--border-primary); border-radius: 6px; padding: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); resize: vertical; }
+  .config-editor:focus { outline: none; border-color: var(--color-primary); }
+  .detail-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .improvement-box { margin-top: 16px; background: rgba(255,0,110,0.05); border: 1px solid rgba(255,0,110,0.2); border-radius: 8px; padding: 14px; }
+  .improvement-box h4 { font-size: 13px; color: var(--color-secondary); margin-bottom: 8px; }
+  .improvement-box p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
+
+  /* Right panel - logs & feedback */
+  .log-entry { background: rgba(15,20,25,0.5); border-radius: 8px; padding: 10px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.03); }
+  .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .log-status { font-size: 11px; font-weight: 600; }
+  .log-status.success { color: var(--color-accent); }
+  .log-status.error { color: var(--color-secondary); }
+  .log-time { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+  .log-duration { font-size: 10px; color: var(--text-muted); }
+  .log-data { font-size: 11px; color: var(--text-secondary); max-height: 60px; overflow: hidden; cursor: pointer; transition: max-height 0.3s; font-family: var(--font-mono); word-break: break-all; }
+  .log-data.expanded { max-height: 300px; overflow-y: auto; }
+  .feedback-row { display: flex; gap: 4px; margin-top: 6px; }
+  .fb-btn { width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--border-primary); background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+  .fb-btn:hover { background: rgba(0,217,255,0.1); color: var(--color-primary); }
+  .fb-btn.active-good { background: rgba(6,214,160,0.2); color: var(--color-accent); border-color: var(--color-accent); }
+  .fb-btn.active-bad { background: rgba(255,0,110,0.2); color: var(--color-secondary); border-color: var(--color-secondary); }
+  .feedback-summary { background: rgba(0,217,255,0.05); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  .feedback-summary .avg { font-size: 20px; font-weight: 700; color: var(--color-warning); }
+
+  /* New skill/flow modal */
+  .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 100; display: none; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 28px; width: 500px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
+  .modal h2 { font-size: 18px; margin-bottom: 16px; }
+  .modal .form-group { margin-bottom: 14px; }
+  .modal .form-group label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+  .modal input, .modal select, .modal textarea { width: 100%; padding: 8px 10px; background: rgba(15,20,25,0.8); border: 1px solid var(--border-primary); border-radius: 6px; color: var(--text-primary); font-family: var(--font-body); font-size: 13px; }
+  .modal textarea { font-family: var(--font-mono); min-height: 80px; resize: vertical; }
+  .modal input:focus, .modal select:focus, .modal textarea:focus { outline: none; border-color: var(--color-primary); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
+  .loading-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(0,217,255,0.2); border-top: 2px solid var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-right: 6px; vertical-align: middle; }
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  @media (max-width: 900px) {
+    .panels { grid-template-columns: 1fr; }
+    .panel { border-right: none; border-bottom: 1px solid var(--border-primary); max-height: 40vh; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="skills-layout">
+  <div class="skills-header">
+    <h1>Skills & Flows</h1>
+    <div class="header-actions">
+      <button class="btn-accent-sm" onclick="showModal('skill')">+ New Skill</button>
+      <button class="btn-accent-sm" onclick="showModal('flow')">+ New Flow</button>
+      <a href="/" class="btn-primary-sm">Back to Chat</a>
+    </div>
+  </div>
+
+  <div class="panels">
+    <!-- LEFT: Skill & Flow List -->
+    <div class="panel" id="left-panel">
+      <h3>Skills</h3>
+      <div class="filter-tabs">
+        <span class="filter-tab active" data-type="all">All</span>
+        <span class="filter-tab" data-type="query">Query</span>
+        <span class="filter-tab" data-type="generate">Generate</span>
+        <span class="filter-tab" data-type="transform">Transform</span>
+        <span class="filter-tab" data-type="action">Action</span>
+        <span class="filter-tab" data-type="condition">Condition</span>
+      </div>
+      <div id="skills-list"></div>
+      <div class="section-divider">Flows</div>
+      <div id="flows-list"></div>
+    </div>
+
+    <!-- CENTER: Detail / Editor -->
+    <div class="panel" id="center-panel">
+      <div class="detail-empty" id="detail-placeholder">
+        <p style="font-size: 14px;">Select a skill or flow from the left panel</p>
+        <p style="font-size: 12px; margin-top: 8px;">or create a new one with the buttons above</p>
+      </div>
+      <div id="detail-content" style="display: none;"></div>
+    </div>
+
+    <!-- RIGHT: Execution Log & Feedback -->
+    <div class="panel" id="right-panel">
+      <h3>Execution Log</h3>
+      <div id="feedback-summary"></div>
+      <div id="logs-list">
+        <p style="color: var(--text-muted); font-size: 12px;">Select a skill to view logs</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Skill Modal -->
+<div class="modal-overlay" id="skill-modal">
+  <div class="modal">
+    <h2>Create New Skill</h2>
+    <div class="form-group"><label>Name</label><input id="new-skill-name" placeholder="e.g. summarize_email"></div>
+    <div class="form-group"><label>Type</label>
+      <select id="new-skill-type">
+        <option value="generate">AI Generate</option>
+        <option value="query">Data Query</option>
+        <option value="transform">Data Transform</option>
+        <option value="action">System Action</option>
+        <option value="condition">Condition Check</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Description</label><input id="new-skill-desc" placeholder="What does this skill do?"></div>
+    <div class="form-group"><label>Config (JSON)</label><textarea id="new-skill-config">{"prompt_template": "Summarize: ${text}"}</textarea></div>
+    <div class="modal-actions">
+      <button class="btn-secondary-sm" onclick="hideModals()">Cancel</button>
+      <button class="btn-primary-sm" onclick="createSkill()">Create Skill</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Flow Modal -->
+<div class="modal-overlay" id="flow-modal">
+  <div class="modal">
+    <h2>Create New Flow</h2>
+    <div class="form-group"><label>Name</label><input id="new-flow-name" placeholder="e.g. Daily Review"></div>
+    <div class="form-group"><label>Description</label><input id="new-flow-desc" placeholder="What does this flow do?"></div>
+    <div class="form-group"><label>Steps (JSON array)</label><textarea id="new-flow-steps" style="min-height: 120px;">[
+  {"skill_name": "query_tasks", "config_override": {"filters": {"status": "pending"}}},
+  {"skill_name": "summarize_text", "input_mapping": {"text": "$previous.output"}}
+]</textarea></div>
+    <div class="modal-actions">
+      <button class="btn-secondary-sm" onclick="hideModals()">Cancel</button>
+      <button class="btn-primary-sm" onclick="createFlow()">Create Flow</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let selectedSkillId = null;
+  let selectedFlowId = null;
+  let currentFilter = 'all';
+
+  function getCookie(name) {
+    let v = null;
+    if (document.cookie) document.cookie.split(';').forEach(c => {
+      c = c.trim(); if (c.startsWith(name + '=')) v = decodeURIComponent(c.substring(name.length + 1));
+    });
+    return v;
+  }
+
+  function starsHtml(rating) {
+    if (!rating) return '';
+    let s = '';
+    for (let i = 1; i <= 5; i++) s += i <= Math.round(rating) ? '★' : '☆';
+    return `<span class="skill-stars">${s} ${rating.toFixed(1)}</span>`;
+  }
+
+  // Load skills
+  async function loadSkills() {
+    const url = currentFilter === 'all' ? '/api/skills/' : `/api/skills/?type=${currentFilter}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const list = document.getElementById('skills-list');
+    if (!data.skills || data.skills.length === 0) {
+      list.innerHTML = '<p style="color: var(--text-muted); font-size: 12px; padding: 8px;">No skills yet. Create one or run: <code>python manage.py setup_builtin_skills</code></p>';
+      return;
+    }
+    list.innerHTML = data.skills.map(s => `
+      <div class="skill-item ${selectedSkillId === s.id ? 'selected' : ''}" onclick="selectSkill(${s.id})">
+        <div class="skill-name">${s.name}${s.is_system ? '<span class="badge-system">SYS</span>' : ''}</div>
+        <div class="skill-meta">
+          <span>${s.skill_type}</span>
+          ${starsHtml(s.avg_rating)}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Load flows
+  async function loadFlows() {
+    const res = await fetch('/api/flows/');
+    const data = await res.json();
+    const list = document.getElementById('flows-list');
+    if (!data.flows || data.flows.length === 0) {
+      list.innerHTML = '<p style="color: var(--text-muted); font-size: 12px; padding: 8px;">No flows yet</p>';
+      return;
+    }
+    list.innerHTML = data.flows.map(f => `
+      <div class="flow-item ${selectedFlowId === f.id ? 'selected' : ''}" onclick="selectFlow(${f.id}, '${f.name}', ${JSON.stringify(f.steps).replace(/'/g, "\\'")})">
+        <div class="flow-name">${f.name}</div>
+        <div class="flow-meta">${f.step_count} steps</div>
+      </div>
+    `).join('');
+  }
+
+  // Select skill
+  async function selectSkill(id) {
+    selectedSkillId = id; selectedFlowId = null;
+    loadSkills(); loadFlows();
+    const res = await fetch(`/api/skills/${id}/`);
+    const s = await res.json();
+    document.getElementById('detail-placeholder').style.display = 'none';
+    const dc = document.getElementById('detail-content');
+    dc.style.display = 'block';
+    dc.innerHTML = `
+      <div class="detail-header">
+        <div><h2>${s.name}</h2><span class="detail-type">${s.skill_type}${s.is_system ? ' (system)' : ''} · v${s.version}</span></div>
+      </div>
+      <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">${s.description || 'No description'}</p>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-value">${s.total_executions}</div><div class="stat-label">Executions</div></div>
+        <div class="stat-card"><div class="stat-value">${s.success_rate.toFixed(0)}%</div><div class="stat-label">Success</div></div>
+        <div class="stat-card"><div class="stat-value">${s.avg_rating ? s.avg_rating.toFixed(1) : '-'}</div><div class="stat-label">Avg Rating</div></div>
+        <div class="stat-card"><div class="stat-value">v${s.version}</div><div class="stat-label">Version</div></div>
+      </div>
+      <div class="config-section">
+        <label>Config</label>
+        <textarea class="config-editor" id="skill-config">${JSON.stringify(s.config, null, 2)}</textarea>
+      </div>
+      <div class="detail-actions">
+        <button class="btn-primary-sm" onclick="saveSkill(${s.id})">Save</button>
+        <button class="btn-secondary-sm" onclick="testSkill(${s.id})">Test</button>
+        <button class="btn-accent-sm" onclick="improveSkill(${s.id})">Improve</button>
+      </div>
+      <div id="improvement-area"></div>
+      <div id="test-result" style="margin-top: 12px;"></div>
+    `;
+    loadLogs(id);
+  }
+
+  // Select flow
+  function selectFlow(id, name, steps) {
+    selectedFlowId = id; selectedSkillId = null;
+    loadSkills(); loadFlows();
+    document.getElementById('detail-placeholder').style.display = 'none';
+    const dc = document.getElementById('detail-content');
+    dc.style.display = 'block';
+    let stepsHtml = steps.map((s, i) => `
+      <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0;">
+        <span style="width: 24px; height: 24px; background: rgba(0,217,255,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--color-primary);">${s.order}</span>
+        <span style="font-size: 13px;">${s.skill}</span>
+        <span style="font-size: 11px; color: var(--text-muted);">${s.type || ''}</span>
+      </div>
+      ${i < steps.length - 1 ? '<div style="margin-left: 11px; border-left: 2px solid var(--border-primary); height: 12px;"></div>' : ''}
+    `).join('');
+    dc.innerHTML = `
+      <div class="detail-header"><div><h2>${name}</h2><span class="detail-type">Flow · ${steps.length} steps</span></div></div>
+      <div style="margin: 16px 0;">${stepsHtml}</div>
+      <div class="detail-actions">
+        <button class="btn-primary-sm" onclick="runFlow(${id})">Run Flow</button>
+      </div>
+      <div id="test-result" style="margin-top: 12px;"></div>
+    `;
+    document.getElementById('logs-list').innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">Select a skill to view logs</p>';
+    document.getElementById('feedback-summary').innerHTML = '';
+  }
+
+  // Load logs for a skill
+  async function loadLogs(skillId) {
+    const res = await fetch(`/api/skills/${skillId}/logs/`);
+    const data = await res.json();
+    const list = document.getElementById('logs-list');
+    if (!data.logs || data.logs.length === 0) {
+      list.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">No execution logs yet</p>';
+      document.getElementById('feedback-summary').innerHTML = '';
+      return;
+    }
+
+    // Feedback summary
+    const rated = data.logs.filter(l => l.feedback);
+    if (rated.length > 0) {
+      const avg = rated.reduce((s, l) => s + l.feedback.rating, 0) / rated.length;
+      document.getElementById('feedback-summary').innerHTML = `
+        <div class="feedback-summary">
+          <div class="avg">${starsHtml(avg)}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${rated.length} rated of ${data.logs.length} runs</div>
+        </div>`;
+    } else {
+      document.getElementById('feedback-summary').innerHTML = '';
+    }
+
+    list.innerHTML = data.logs.map(l => `
+      <div class="log-entry">
+        <div class="log-header">
+          <span class="log-status ${l.status}">${l.status === 'success' ? '✓' : '✗'} ${l.status}</span>
+          <span class="log-time">${new Date(l.executed_at).toLocaleTimeString()}</span>
+        </div>
+        <div class="log-data" onclick="this.classList.toggle('expanded')">In: ${JSON.stringify(l.input_data).substring(0, 80)}...</div>
+        <div class="log-data" onclick="this.classList.toggle('expanded')" style="margin-top:2px;">Out: ${JSON.stringify(l.output_data).substring(0, 80)}...</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+          <span class="log-duration">${l.duration_ms}ms</span>
+          <div class="feedback-row">
+            ${l.feedback ? `<span style="font-size: 11px; color: var(--color-warning);">${'★'.repeat(l.feedback.rating)}${'☆'.repeat(5 - l.feedback.rating)}</span>` :
+              `<button class="fb-btn" onclick="submitFeedback(${l.id}, 5)" title="Good">👍</button>
+               <button class="fb-btn" onclick="submitFeedback(${l.id}, 1)" title="Bad">👎</button>`}
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Actions
+  async function saveSkill(id) {
+    const config = document.getElementById('skill-config').value;
+    try {
+      await fetch(`/api/skills/${id}/`, {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+        body: JSON.stringify({config: JSON.parse(config)})
+      });
+      selectSkill(id);
+    } catch (e) { alert('Invalid JSON config'); }
+  }
+
+  async function testSkill(id) {
+    const el = document.getElementById('test-result');
+    el.innerHTML = '<span class="loading-spinner"></span> Testing...';
+    const res = await fetch(`/api/skills/${id}/test/`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+      body: '{}'
+    });
+    const data = await res.json();
+    el.innerHTML = `<pre style="font-size: 11px; color: var(--text-secondary); background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(data, null, 2)}</pre>`;
+    loadLogs(id);
+  }
+
+  async function improveSkill(id) {
+    const area = document.getElementById('improvement-area');
+    area.innerHTML = '<div class="improvement-box"><span class="loading-spinner"></span> Analyzing feedback...</div>';
+    const res = await fetch(`/api/skills/${id}/improve/`);
+    const data = await res.json();
+    if (data.status === 'no_issues') {
+      area.innerHTML = `<div class="improvement-box"><h4>No Issues</h4><p>${data.message}</p></div>`;
+    } else {
+      area.innerHTML = `<div class="improvement-box"><h4>Improvement Suggestion</h4><p>${data.suggestion || 'No suggestion available'}</p></div>`;
+    }
+  }
+
+  async function runFlow(id) {
+    const el = document.getElementById('test-result');
+    el.innerHTML = '<span class="loading-spinner"></span> Running flow...';
+    const res = await fetch(`/api/flows/${id}/run/`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+      body: '{}'
+    });
+    const data = await res.json();
+    if (data.execution_id) {
+      window.location.href = `/flow/run/${data.execution_id}/`;
+    } else {
+      el.innerHTML = `<pre style="font-size: 11px; color: var(--text-secondary); background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; white-space: pre-wrap;">${JSON.stringify(data, null, 2)}</pre>`;
+    }
+  }
+
+  async function submitFeedback(logId, rating) {
+    await fetch('/api/skill-feedback/', {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+      body: JSON.stringify({execution_log_id: logId, rating: rating})
+    });
+    if (selectedSkillId) loadLogs(selectedSkillId);
+  }
+
+  // Modals
+  function showModal(type) { document.getElementById(type + '-modal').classList.add('show'); }
+  function hideModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('show')); }
+
+  async function createSkill() {
+    const name = document.getElementById('new-skill-name').value;
+    const config = document.getElementById('new-skill-config').value;
+    try {
+      const res = await fetch('/api/skills/create/', {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+        body: JSON.stringify({
+          name: name, skill_type: document.getElementById('new-skill-type').value,
+          description: document.getElementById('new-skill-desc').value,
+          config: JSON.parse(config)
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'created') { hideModals(); loadSkills(); selectSkill(data.skill_id); }
+      else alert(data.error || 'Error creating skill');
+    } catch (e) { alert('Invalid JSON config'); }
+  }
+
+  async function createFlow() {
+    const steps = document.getElementById('new-flow-steps').value;
+    try {
+      const res = await fetch('/api/flows/create/', {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+        body: JSON.stringify({
+          name: document.getElementById('new-flow-name').value,
+          description: document.getElementById('new-flow-desc').value,
+          steps: JSON.parse(steps)
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'created') { hideModals(); loadFlows(); }
+      else alert(data.error || 'Error creating flow');
+    } catch (e) { alert('Invalid JSON steps'); }
+  }
+
+  // Filter tabs
+  document.querySelectorAll('.filter-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentFilter = tab.dataset.type;
+      loadSkills();
+    });
+  });
+
+  // Init
+  document.addEventListener('DOMContentLoaded', () => { loadSkills(); loadFlows(); });
+</script>
+{% endblock %}
