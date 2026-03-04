@@ -1805,6 +1805,82 @@ def api_ollama_status(request):
 
 
 @login_required
+def api_save_ollama_config(request):
+    """Test and save a new Ollama connection URL.
+
+    POST body: { "base_url": "http://host:11434" }
+    - Validates the URL format
+    - Tests the connection by calling list()
+    - On success, updates the in-memory OLLAMA_BASE_URL for this process
+      and persists it to .env so it survives restarts
+    """
+    import re
+    import chatbot.views as _self   # reference to this module's globals
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+
+    if not OLLAMA_AVAILABLE:
+        return JsonResponse({'error': 'Ollama library not installed. Run: pip install ollama'}, status=400)
+
+    import json
+    try:
+        body = json.loads(request.body)
+        new_url = body.get('base_url', '').strip().rstrip('/')
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'error': 'Invalid JSON body'}, status=400)
+
+    if not new_url:
+        return JsonResponse({'error': 'base_url is required'}, status=400)
+
+    # Basic URL validation
+    if not re.match(r'^https?://.+', new_url):
+        return JsonResponse({'error': 'base_url must start with http:// or https://'}, status=400)
+
+    # Test the connection
+    try:
+        oc = ollama_client.Client(host=new_url)
+        response = oc.list()
+        models = [m.get('name', m.get('model', '')) for m in response.get('models', [])]
+    except Exception as e:
+        return JsonResponse({
+            'error': f'Cannot connect to Ollama at {new_url}: {str(e)}',
+            'tip': 'Make sure Ollama is running (ollama serve) and the URL is reachable.'
+        }, status=400)
+
+    # Connection succeeded — update in-memory global for this process
+    _self.OLLAMA_BASE_URL = new_url
+
+    # Persist to .env so it survives server restarts
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+    try:
+        if os.path.exists(env_path):
+            with open(env_path, 'r') as f:
+                env_content = f.read()
+            if 'OLLAMA_BASE_URL' in env_content:
+                import re as _re
+                env_content = _re.sub(
+                    r'^OLLAMA_BASE_URL\s*=.*$',
+                    f'OLLAMA_BASE_URL = {new_url}',
+                    env_content,
+                    flags=_re.MULTILINE
+                )
+            else:
+                env_content += f'\nOLLAMA_BASE_URL = {new_url}\n'
+            with open(env_path, 'w') as f:
+                f.write(env_content)
+    except Exception:
+        pass  # .env update is best-effort, connection is already working
+
+    return JsonResponse({
+        'success': True,
+        'base_url': new_url,
+        'models': models,
+        'message': f'Connected to Ollama at {new_url}. {len(models)} model(s) found.'
+    })
+
+
+@login_required
 def api_save_settings(request):
     """Save user model preference"""
     if request.method != 'POST':

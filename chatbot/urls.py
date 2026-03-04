@@ -70,6 +70,7 @@ urlpatterns = [
 
     # Ollama endpoints
     path('api/ollama/status/', views.api_ollama_status, name='api_ollama_status'),
+    path('api/ollama/connect/', views.api_save_ollama_config, name='api_ollama_connect'),
 
     # Claude Terminal endpoints (Phase 1)
     path('claude-terminal/', views.claude_terminal, name='claude_terminal'),

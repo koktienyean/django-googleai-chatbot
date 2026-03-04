@@ -417,15 +417,60 @@
 
   <div class="settings-section">
     <h2>Ollama (Local AI)</h2>
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-      <span id="ollama-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); display: inline-block;"></span>
-      <span id="ollama-status-text" style="font-size: 14px; color: var(--text-secondary);">Checking Ollama status...</span>
-      <button id="ollama-refresh-btn" class="btn btn-secondary" style="margin-left: auto; padding: 6px 14px; font-size: 11px;">Refresh</button>
+
+    <!-- Connection status row -->
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+      <span id="ollama-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); display: inline-block; flex-shrink: 0;"></span>
+      <span id="ollama-status-text" style="font-size: 14px; color: var(--text-secondary);">Checking connection...</span>
+      <button id="ollama-refresh-btn" class="btn btn-secondary" style="margin-left: auto; padding: 6px 14px; font-size: 11px; white-space: nowrap;">&#8635; Refresh</button>
     </div>
-    <div id="ollama-models-info" style="font-size: 13px; color: var(--text-muted);">
+
+    <!-- URL input + Connect -->
+    <label style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 8px;">
+      Ollama Server URL
+    </label>
+    <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+      <input
+        id="ollama-url-input"
+        type="text"
+        value="http://localhost:11434"
+        placeholder="http://localhost:11434"
+        style="
+          flex: 1;
+          padding: 10px 14px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-primary);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 13px;
+          outline: none;
+          transition: border-color 0.2s;
+        "
+        onfocus="this.style.borderColor='var(--color-primary)'"
+        onblur="this.style.borderColor='var(--border-primary)'"
+      />
+      <button
+        id="ollama-connect-btn"
+        class="btn btn-primary"
+        style="padding: 10px 20px; font-size: 13px; white-space: nowrap;"
+        onclick="connectOllama()"
+      >
+        Connect
+      </button>
     </div>
-    <small style="display: block; margin-top: 12px;">
-      Ollama lets you run AI models locally for free. Install from <strong>ollama.com</strong>, then run <code style="background: rgba(0,217,255,0.1); padding: 2px 6px; border-radius: 4px;">ollama pull llama3.2</code> to get started.
+
+    <!-- Feedback message -->
+    <div id="ollama-connect-msg" style="display: none; font-size: 13px; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px;"></div>
+
+    <!-- Models list -->
+    <div id="ollama-models-info" style="font-size: 13px; color: var(--text-muted);"></div>
+
+    <small style="display: block; margin-top: 14px; color: var(--text-muted); line-height: 1.6;">
+      Ollama runs AI models locally — free, private, no API key needed.<br>
+      Install from <strong style="color: var(--text-secondary);">ollama.com</strong>, then pull a model:
+      <code style="background: rgba(0,217,255,0.1); padding: 2px 6px; border-radius: 4px; color: var(--color-primary);">ollama pull llama3.2</code><br>
+      To connect a remote Ollama server, enter its URL above and click <strong style="color: var(--text-secondary);">Connect</strong>.
     </small>
   </div>
 
@@ -468,56 +513,132 @@
     'gemini-pro': 'Gemini Pro - Reliable and accurate model.'
   };
 
-  // Ollama status check
+  // ========== Ollama Connection ==========
+
+  function setOllamaUI(dot, text, info, ollamaGroup, status, message, models) {
+    const dotColors = { connected: 'var(--color-accent)', offline: 'var(--color-secondary)', unavailable: 'var(--text-muted)' };
+    dot.style.background = dotColors[status] || dotColors.offline;
+    text.textContent = message;
+    if (models && models.length > 0) {
+      info.innerHTML = `<strong style="color: var(--color-primary);">${models.length} model(s) available:</strong> ${models.join(', ')}`;
+      ollamaGroup.innerHTML = '';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = 'ollama:' + m;
+        opt.textContent = m + ' (Local)';
+        modelDescriptions['ollama:' + m] = `${m} - Local Ollama model. Free, private, runs on your machine.`;
+        ollamaGroup.appendChild(opt);
+      });
+    } else if (status === 'connected') {
+      info.innerHTML = 'No models installed yet. Run: <code style="background: rgba(0,217,255,0.1); padding: 2px 6px; border-radius: 4px;">ollama pull llama3.2</code>';
+      ollamaGroup.innerHTML = '<option disabled>No models installed</option>';
+    } else {
+      info.innerHTML = '';
+      ollamaGroup.innerHTML = '<option disabled>Ollama offline</option>';
+    }
+  }
+
   async function checkOllamaStatus() {
     const dot = document.getElementById('ollama-status-dot');
     const text = document.getElementById('ollama-status-text');
     const info = document.getElementById('ollama-models-info');
     const ollamaGroup = document.getElementById('ollama-models-group');
 
+    text.textContent = 'Checking connection...';
+    dot.style.background = 'var(--text-muted)';
+
     try {
       const response = await fetch('/api/ollama/status/');
       const data = await response.json();
 
       if (data.status === 'connected') {
-        dot.style.background = 'var(--color-accent)';
-        text.textContent = `Connected to ${data.base_url}`;
-
-        if (data.models && data.models.length > 0) {
-          info.innerHTML = `<strong style="color: var(--color-primary);">${data.models.length} model(s) available:</strong> ${data.models.join(', ')}`;
-
-          // Populate Ollama models in dropdown
-          ollamaGroup.innerHTML = '';
-          data.models.forEach(m => {
-            const opt = document.createElement('option');
-            opt.value = 'ollama:' + m;
-            opt.textContent = m + ' (Local)';
-            modelDescriptions['ollama:' + m] = `${m} - Local Ollama model. Free, private, runs on your machine.`;
-            ollamaGroup.appendChild(opt);
-          });
-        } else {
-          info.innerHTML = data.message || 'No models installed.';
-          ollamaGroup.innerHTML = '<option disabled>No models installed</option>';
+        // Populate URL input with current server URL
+        if (data.base_url) {
+          document.getElementById('ollama-url-input').value = data.base_url;
         }
+        setOllamaUI(dot, text, info, ollamaGroup, 'connected', `Connected — ${data.base_url}`, data.models || []);
       } else if (data.status === 'unavailable') {
-        dot.style.background = 'var(--text-muted)';
-        text.textContent = 'Ollama library not installed';
-        info.innerHTML = 'Install with: <code style="background: rgba(0,217,255,0.1); padding: 2px 6px; border-radius: 4px;">pip install ollama</code>';
-        ollamaGroup.innerHTML = '<option disabled>Ollama not available</option>';
+        setOllamaUI(dot, text, info, ollamaGroup, 'unavailable', 'Ollama library not installed (pip install ollama)', []);
       } else {
-        dot.style.background = 'var(--color-secondary)';
-        text.textContent = 'Ollama offline';
-        info.innerHTML = data.message || 'Cannot connect to Ollama.';
-        ollamaGroup.innerHTML = '<option disabled>Ollama offline</option>';
+        setOllamaUI(dot, text, info, ollamaGroup, 'offline', 'Ollama offline — not reachable', []);
       }
     } catch (e) {
-      dot.style.background = 'var(--color-secondary)';
-      text.textContent = 'Cannot check Ollama status';
-      ollamaGroup.innerHTML = '<option disabled>Status unknown</option>';
+      setOllamaUI(dot, text, info, ollamaGroup, 'offline', 'Cannot reach Ollama server', []);
     }
   }
 
+  async function connectOllama() {
+    const btn = document.getElementById('ollama-connect-btn');
+    const urlInput = document.getElementById('ollama-url-input');
+    const msgEl = document.getElementById('ollama-connect-msg');
+    const dot = document.getElementById('ollama-status-dot');
+    const text = document.getElementById('ollama-status-text');
+    const info = document.getElementById('ollama-models-info');
+    const ollamaGroup = document.getElementById('ollama-models-group');
+
+    const newUrl = urlInput.value.trim();
+    if (!newUrl) {
+      showConnectMsg('error', 'Please enter a URL.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Connecting...';
+    msgEl.style.display = 'none';
+
+    try {
+      const resp = await fetch('/api/ollama/connect/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({ base_url: newUrl }),
+      });
+      const data = await resp.json();
+
+      if (resp.ok && data.success) {
+        showConnectMsg('success', data.message);
+        setOllamaUI(dot, text, info, ollamaGroup, 'connected', `Connected — ${newUrl}`, data.models || []);
+      } else {
+        const errMsg = data.error || 'Connection failed.';
+        const tip = data.tip ? `<br><small style="opacity:0.8">${data.tip}</small>` : '';
+        showConnectMsg('error', errMsg + tip);
+        setOllamaUI(dot, text, info, ollamaGroup, 'offline', 'Connection failed', []);
+      }
+    } catch (e) {
+      showConnectMsg('error', 'Network error — could not reach server.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Connect';
+    }
+  }
+
+  function showConnectMsg(type, html) {
+    const el = document.getElementById('ollama-connect-msg');
+    el.style.display = 'block';
+    if (type === 'success') {
+      el.style.background = 'rgba(6, 214, 160, 0.1)';
+      el.style.border = '1px solid rgba(6, 214, 160, 0.3)';
+      el.style.color = 'var(--color-accent)';
+    } else {
+      el.style.background = 'rgba(255, 0, 110, 0.1)';
+      el.style.border = '1px solid rgba(255, 0, 110, 0.3)';
+      el.style.color = 'var(--color-secondary)';
+    }
+    el.innerHTML = html;
+  }
+
+  function getCsrf() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (el) return el.value;
+    const match = document.cookie.match(/csrftoken=([^;]+)/);
+    return match ? match[1] : '';
+  }
+
   document.getElementById('ollama-refresh-btn').addEventListener('click', checkOllamaStatus);
+
+  // Allow Enter key in URL input to trigger connect
+  document.getElementById('ollama-url-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') connectOllama();
+  });
 
   // Set up model selection
   function initializeSettings() {
