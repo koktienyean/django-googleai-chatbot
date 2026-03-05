@@ -71,6 +71,8 @@ urlpatterns = [
     # Ollama endpoints
     path('api/ollama/status/', views.api_ollama_status, name='api_ollama_status'),
     path('api/ollama/connect/', views.api_save_ollama_config, name='api_ollama_connect'),
+    path('api/ollama/start/', views.api_ollama_start, name='api_ollama_start'),
+    path('api/ollama/stop/', views.api_ollama_stop, name='api_ollama_stop'),
 
     # Claude Terminal endpoints (Phase 1)
     path('claude-terminal/', views.claude_terminal, name='claude_terminal'),

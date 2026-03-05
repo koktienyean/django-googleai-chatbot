@@ -146,51 +146,62 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None):
         return f"Error: {str(e)}"
 
 
-def ask_gemini_api(message, model='gemini-2.0-flash', user=None):
+def ask_gemini_api(message, model='gemini-2.5-flash', user=None):
     """Call Gemini (Google Generative AI) API and return response text.
     Uses shared tool definitions from chatbot.tools package.
     """
     from chatbot.tools import format_tools_for_gemini, execute_tool, SYSTEM_INSTRUCTION
 
     try:
-        tools = format_tools_for_gemini(user) if user else None
-
-        # Create model with tools if user is provided
-        if tools:
-            model_obj = genai.GenerativeModel(model, tools=tools, system_instruction=SYSTEM_INSTRUCTION)
-        else:
-            model_obj = genai.GenerativeModel(model)
-
+        model_obj = genai.GenerativeModel(model)
         chat = model_obj.start_chat()
-        response = chat.send_message(message)
 
-        # Handle function calling responses
-        while response.candidates and response.candidates[0].content.parts:
-            last_part = response.candidates[0].content.parts[-1]
+        # Prepend system instruction to the user message
+        full_message = f"{SYSTEM_INSTRUCTION}\n\n{message}" if SYSTEM_INSTRUCTION else message
 
-            if not hasattr(last_part, 'function_call') or not last_part.function_call:
-                break
+        # Check if this version supports tools/function calling
+        import inspect
+        model_init_params = inspect.signature(genai.GenerativeModel.__init__).parameters
+        supports_tools = 'tools' in model_init_params
 
-            function_call = last_part.function_call
-            function_name = function_call.name
-            function_args = function_call.args
+        if supports_tools:
+            tools = format_tools_for_gemini(user) if user else None
+            if tools:
+                # Re-create model with tools for newer versions
+                model_obj = genai.GenerativeModel(model, tools=tools, system_instruction=SYSTEM_INSTRUCTION)
+                chat = model_obj.start_chat()
+                full_message = message  # system_instruction already set
 
-            # Dispatch through shared executor
-            result = execute_tool(user, function_name, dict(function_args))
+            response = chat.send_message(full_message)
 
-            # Send function result back to Gemini with proper format
-            response = chat.send_message(
-                genai.protos.Content(
-                    parts=[
-                        genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
-                                name=function_name,
-                                response=result
+            # Handle function calling responses
+            while response.candidates and response.candidates[0].content.parts:
+                last_part = response.candidates[0].content.parts[-1]
+
+                if not hasattr(last_part, 'function_call') or not last_part.function_call:
+                    break
+
+                function_call = last_part.function_call
+                function_name = function_call.name
+                function_args = function_call.args
+
+                result = execute_tool(user, function_name, dict(function_args))
+
+                response = chat.send_message(
+                    genai.protos.Content(
+                        parts=[
+                            genai.protos.Part(
+                                function_response=genai.protos.FunctionResponse(
+                                    name=function_name,
+                                    response=result
+                                )
                             )
-                        )
-                    ]
+                        ]
+                    )
                 )
-            )
+        else:
+            # Older google-generativeai (<=0.3.x): no tools/function calling support
+            response = chat.send_message(full_message)
 
         return response.text
     except Exception as e:
@@ -1714,6 +1725,9 @@ def settings_page(request):
 def api_list_models(request):
     """Fetch available models from all backends (Gemini, Claude, Ollama) with caching"""
     cache_key = 'all_models_list'
+    # Allow cache bypass with ?refresh=1 (e.g. after Ollama start/stop)
+    if request.GET.get('refresh'):
+        cache.delete(cache_key)
     models_data = cache.get(cache_key)
 
     if not models_data:
@@ -1729,9 +1743,11 @@ def api_list_models(request):
         # Gemini models
         try:
             free_tier_models = [
+                'gemini-2.5-pro',
+                'gemini-2.5-flash',
+                'gemini-2.5-flash-lite',
                 'gemini-2.0-flash',
                 'gemini-1.5-flash',
-                'gemini-1.5-flash-8b',
             ]
 
             models = genai.list_models()
@@ -1747,14 +1763,15 @@ def api_list_models(request):
                 models_data.extend(gemini_models)
             else:
                 models_data.extend([
-                    {'name': 'gemini-2.0-flash', 'display': 'Gemini 2.0 Flash', 'provider': 'gemini'},
-                    {'name': 'gemini-1.5-flash', 'display': 'Gemini 1.5 Flash', 'provider': 'gemini'},
-                    {'name': 'gemini-1.5-flash-8b', 'display': 'Gemini 1.5 Flash 8B', 'provider': 'gemini'},
+                    {'name': 'gemini-2.5-flash', 'display': 'Gemini 2.5 Flash', 'provider': 'gemini'},
+                    {'name': 'gemini-2.5-flash-lite', 'display': 'Gemini 2.5 Flash Lite', 'provider': 'gemini'},
+                    {'name': 'gemini-2.5-pro', 'display': 'Gemini 2.5 Pro', 'provider': 'gemini'},
                 ])
         except Exception:
             models_data.extend([
-                {'name': 'gemini-2.0-flash', 'display': 'Gemini 2.0 Flash', 'provider': 'gemini'},
-                {'name': 'gemini-1.5-flash', 'display': 'Gemini 1.5 Flash', 'provider': 'gemini'},
+                {'name': 'gemini-2.5-flash', 'display': 'Gemini 2.5 Flash', 'provider': 'gemini'},
+                {'name': 'gemini-2.5-flash-lite', 'display': 'Gemini 2.5 Flash Lite', 'provider': 'gemini'},
+                {'name': 'gemini-2.5-pro', 'display': 'Gemini 2.5 Pro', 'provider': 'gemini'},
             ])
 
         # Ollama models (local)
@@ -1782,7 +1799,11 @@ def api_ollama_status(request):
         })
 
     try:
-        ollama_models = get_ollama_models()
+        # Test connection directly (get_ollama_models swallows exceptions)
+        oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+        response = oc.list()
+        ollama_models = [m.get('name', m.get('model', '')) for m in response.get('models', [])]
+
         if ollama_models:
             return JsonResponse({
                 'status': 'connected',
@@ -1802,6 +1823,112 @@ def api_ollama_status(request):
             'message': str(e),
             'models': []
         })
+
+
+@login_required
+def api_ollama_start(request):
+    """Start the local Ollama server process."""
+    import subprocess, shutil, time
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+
+    if not OLLAMA_AVAILABLE:
+        return JsonResponse({'error': 'Ollama library not installed.'}, status=400)
+
+    # Check if already running
+    try:
+        oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+        oc.list()
+        return JsonResponse({'status': 'already_running', 'message': 'Ollama is already running.'})
+    except Exception:
+        pass
+
+    # On Windows, try starting the service first
+    if os.name == 'nt':
+        svc = subprocess.run(['net', 'start', 'OllamaService'], capture_output=True, timeout=10)
+        if svc.returncode == 0:
+            time.sleep(2)
+            try:
+                oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+                oc.list()
+                return JsonResponse({'status': 'started', 'message': 'Ollama service started successfully.'})
+            except Exception:
+                pass
+
+    # Fallback: start ollama serve directly
+    ollama_path = shutil.which('ollama')
+    if not ollama_path:
+        return JsonResponse({
+            'error': 'Ollama executable not found on PATH. Install from ollama.com',
+        }, status=400)
+
+    try:
+        subprocess.Popen(
+            [ollama_path, 'serve'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0) | getattr(subprocess, 'DETACHED_PROCESS', 0),
+        )
+        time.sleep(2)
+
+        # Verify it started
+        try:
+            oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+            oc.list()
+            return JsonResponse({'status': 'started', 'message': 'Ollama server started successfully.'})
+        except Exception:
+            return JsonResponse({'status': 'starting', 'message': 'Ollama is starting up, please refresh in a few seconds.'})
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to start Ollama: {str(e)}'}, status=500)
+
+
+@login_required
+def api_ollama_stop(request):
+    """Stop the local Ollama server process."""
+    import subprocess, shutil, time
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+
+    # Check if it's actually running using ollama client (consistent with status endpoint)
+    if OLLAMA_AVAILABLE:
+        try:
+            oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+            oc.list()
+        except Exception:
+            return JsonResponse({'status': 'already_stopped', 'message': 'Ollama is not running.'})
+    else:
+        return JsonResponse({'error': 'Ollama library not installed.'}, status=400)
+
+    try:
+        if os.name == 'nt':
+            # Stop the Windows service first (prevents auto-restart)
+            subprocess.run(['net', 'stop', 'OllamaService'], capture_output=True, timeout=10)
+            subprocess.run(['sc', 'stop', 'ollama'], capture_output=True, timeout=5)
+            time.sleep(0.5)
+            # Then kill any remaining processes
+            subprocess.run(['taskkill', '/f', '/im', 'ollama.exe'], capture_output=True, timeout=5)
+            subprocess.run(['taskkill', '/f', '/im', 'ollama_llama_server.exe'], capture_output=True, timeout=5)
+            subprocess.run(['taskkill', '/f', '/im', 'ollama app.exe'], capture_output=True, timeout=5)
+        else:
+            subprocess.run(['systemctl', 'stop', 'ollama'], capture_output=True, timeout=5)
+            subprocess.run(['pkill', '-f', 'ollama'], capture_output=True, timeout=5)
+
+        time.sleep(1.5)
+
+        # Verify it stopped
+        try:
+            oc = ollama_client.Client(host=OLLAMA_BASE_URL)
+            oc.list()
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Ollama is still running. It may be managed by a system service. Try stopping it manually from the system tray.'
+            }, status=500)
+        except Exception:
+            return JsonResponse({'status': 'stopped', 'message': 'Ollama server stopped.'})
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to stop Ollama: {str(e)}'}, status=500)
 
 
 @login_required
@@ -1897,7 +2024,10 @@ def api_save_settings(request):
         'claude-3-5-sonnet-20241022',
         'claude-3-opus-20250219',
         'claude-3-haiku-20240307',
-        # Gemini models
+        # Gemini models (free tier)
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
         'gemini-2.0-flash',
         'gemini-1.5-flash',
         'gemini-1.5-pro',

@@ -1012,19 +1012,7 @@
       <div class="model-selector">
         <label for="model-select">AI Model:</label>
         <select id="model-select">
-          <optgroup label="Claude (Anthropic)">
-            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-            <option value="claude-3-opus-20250219">Claude 3 Opus</option>
-            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
-          </optgroup>
-          <optgroup label="Gemini (Google)">
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-            <option value="gemini-pro">Gemini Pro</option>
-          </optgroup>
-          <optgroup id="ollama-models-group" label="Ollama (Local)">
-          </optgroup>
+          <option value="" disabled selected>Loading models...</option>
         </select>
       </div>
     </div>
@@ -1066,46 +1054,55 @@
   const sessionsContainer = document.getElementById('sessions-container');
   const modelSelect = document.getElementById('model-select');
 
-  // Load Ollama models into dropdown
-  async function loadOllamaModels() {
-    const ollamaGroup = document.getElementById('ollama-models-group');
-    try {
-      const response = await fetch('/api/ollama/status/');
-      const data = await response.json();
-      if (data.status === 'connected' && data.models && data.models.length > 0) {
-        ollamaGroup.innerHTML = '';
-        data.models.forEach(m => {
-          const opt = document.createElement('option');
-          opt.value = 'ollama:' + m;
-          opt.textContent = m + ' (Local)';
-          ollamaGroup.appendChild(opt);
-        });
-      } else {
-        ollamaGroup.style.display = 'none';
-      }
-    } catch (e) {
-      ollamaGroup.style.display = 'none';
-    }
-
-    // Now set the model after Ollama models are loaded
-    const sessionModel = '{{ session.model }}';
-    if (sessionModel && modelSelect.querySelector(`option[value="${sessionModel}"]`)) {
-      currentModel = sessionModel;
-      modelSelect.value = currentModel;
-    }
-  }
-
-  // Set the model selector to the current session's model (default to Claude 3.5 Sonnet)
+  // Dynamically load all models from API
   let currentModel = 'claude-3-5-sonnet-20241022';
-  if ('{{ session.model }}' && modelSelect.querySelector(`option[value="{{ session.model }}"]`)) {
-    currentModel = '{{ session.model }}';
-    modelSelect.value = currentModel;
-  } else {
-    modelSelect.value = currentModel;
+
+  async function loadModels() {
+    try {
+      const response = await fetch('/api/models/');
+      const data = await response.json();
+      const models = data.models || [];
+
+      // Group by provider
+      const groups = {};
+      const providerLabels = {
+        'claude': 'Claude (Anthropic)',
+        'gemini': 'Gemini (Google) - Free',
+        'ollama': 'Ollama (Local)'
+      };
+      models.forEach(m => {
+        const p = m.provider || 'other';
+        if (!groups[p]) groups[p] = [];
+        groups[p].push(m);
+      });
+
+      // Build select options
+      modelSelect.innerHTML = '';
+      for (const [provider, items] of Object.entries(groups)) {
+        const group = document.createElement('optgroup');
+        group.label = providerLabels[provider] || provider;
+        items.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.name;
+          opt.textContent = m.display + (provider === 'ollama' ? ' (Local)' : '');
+          group.appendChild(opt);
+        });
+        modelSelect.appendChild(group);
+      }
+
+      // Restore session model or default
+      const sessionModel = '{{ session.model }}';
+      if (sessionModel && modelSelect.querySelector(`option[value="${sessionModel}"]`)) {
+        currentModel = sessionModel;
+      }
+      modelSelect.value = currentModel;
+    } catch (e) {
+      // Fallback: keep whatever is in the select
+      console.error('Failed to load models:', e);
+    }
   }
 
-  // Load Ollama models (async, will update selector when done)
-  loadOllamaModels();
+  loadModels();
 
   // Handle model selection change
   modelSelect.addEventListener('change', (e) => {

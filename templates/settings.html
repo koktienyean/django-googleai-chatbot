@@ -385,19 +385,7 @@
     <div class="form-group">
       <label for="model-select">Choose Model</label>
       <select id="model-select" class="model-select">
-        <optgroup label="Claude (Anthropic) - Subscription Required">
-          <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
-          <option value="claude-3-opus-20250219">Claude 3 Opus (Most Capable)</option>
-          <option value="claude-3-haiku-20240307">Claude 3 Haiku (Fast & Efficient)</option>
-        </optgroup>
-        <optgroup label="Gemini (Google)">
-          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-          <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-          <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-          <option value="gemini-pro">Gemini Pro</option>
-        </optgroup>
-        <optgroup id="ollama-models-group" label="Ollama (Local) - Free & Private">
-        </optgroup>
+        <option value="" disabled selected>Loading models...</option>
       </select>
       <small>Select the AI model to use as default for new conversations. You can also change it per-conversation from the chat interface.</small>
     </div>
@@ -423,6 +411,8 @@
       <span id="ollama-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); display: inline-block; flex-shrink: 0;"></span>
       <span id="ollama-status-text" style="font-size: 14px; color: var(--text-secondary);">Checking connection...</span>
       <button id="ollama-refresh-btn" class="btn btn-secondary" style="margin-left: auto; padding: 6px 14px; font-size: 11px; white-space: nowrap;">&#8635; Refresh</button>
+      <button id="ollama-start-btn" class="btn btn-primary" style="padding: 6px 14px; font-size: 11px; white-space: nowrap; display: none;" onclick="startOllama()">&#9654; Start</button>
+      <button id="ollama-stop-btn" class="btn btn-secondary" style="padding: 6px 14px; font-size: 11px; white-space: nowrap; background: #dc3545; border-color: #dc3545; display: none;" onclick="stopOllama()">&#9632; Stop</button>
     </div>
 
     <!-- URL input + Connect -->
@@ -507,42 +497,48 @@
     'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet - Balanced performance and cost. Great for most tasks.',
     'claude-3-opus-20250219': 'Claude 3 Opus - Most capable model. Best for complex reasoning and analysis.',
     'claude-3-haiku-20240307': 'Claude 3 Haiku - Fast and efficient. Best for quick responses and simple tasks.',
-    'gemini-2.0-flash': 'Gemini 2.0 Flash - Latest fast model with excellent performance.',
-    'gemini-1.5-flash': 'Gemini 1.5 Flash - Fast and reliable for most conversations.',
-    'gemini-1.5-pro': 'Gemini 1.5 Pro - More capable for complex tasks.',
-    'gemini-pro': 'Gemini Pro - Reliable and accurate model.'
+    'gemini-2.5-flash': 'Gemini 2.5 Flash - Fast and capable. Free tier: 10 RPM, 250 req/day.',
+    'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite - Fastest and lightest. Free tier: 15 RPM, 1000 req/day.',
+    'gemini-2.5-pro': 'Gemini 2.5 Pro - Most capable Gemini. Free tier: 5 RPM, 100 req/day.'
   };
 
   // ========== Ollama Connection ==========
 
-  function setOllamaUI(dot, text, info, ollamaGroup, status, message, models) {
+  function setOllamaUI(dot, text, info, status, message, models) {
     const dotColors = { connected: 'var(--color-accent)', offline: 'var(--color-secondary)', unavailable: 'var(--text-muted)' };
     dot.style.background = dotColors[status] || dotColors.offline;
     text.textContent = message;
+
+    // Show/hide Start/Stop buttons based on status
+    const startBtn = document.getElementById('ollama-start-btn');
+    const stopBtn = document.getElementById('ollama-stop-btn');
+    if (status === 'connected') {
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
+    } else if (status === 'offline' || status === 'disconnected') {
+      startBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'none';
+    } else {
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'none';
+    }
+
     if (models && models.length > 0) {
       info.innerHTML = `<strong style="color: var(--color-primary);">${models.length} model(s) available:</strong> ${models.join(', ')}`;
-      ollamaGroup.innerHTML = '';
-      models.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = 'ollama:' + m;
-        opt.textContent = m + ' (Local)';
-        modelDescriptions['ollama:' + m] = `${m} - Local Ollama model. Free, private, runs on your machine.`;
-        ollamaGroup.appendChild(opt);
-      });
     } else if (status === 'connected') {
       info.innerHTML = 'No models installed yet. Run: <code style="background: rgba(0,217,255,0.1); padding: 2px 6px; border-radius: 4px;">ollama pull llama3.2</code>';
-      ollamaGroup.innerHTML = '<option disabled>No models installed</option>';
     } else {
       info.innerHTML = '';
-      ollamaGroup.innerHTML = '<option disabled>Ollama offline</option>';
     }
+
+    // Reload model dropdown to reflect Ollama changes
+    loadModels();
   }
 
   async function checkOllamaStatus() {
     const dot = document.getElementById('ollama-status-dot');
     const text = document.getElementById('ollama-status-text');
     const info = document.getElementById('ollama-models-info');
-    const ollamaGroup = document.getElementById('ollama-models-group');
 
     text.textContent = 'Checking connection...';
     dot.style.background = 'var(--text-muted)';
@@ -552,18 +548,17 @@
       const data = await response.json();
 
       if (data.status === 'connected') {
-        // Populate URL input with current server URL
         if (data.base_url) {
           document.getElementById('ollama-url-input').value = data.base_url;
         }
-        setOllamaUI(dot, text, info, ollamaGroup, 'connected', `Connected — ${data.base_url}`, data.models || []);
+        setOllamaUI(dot, text, info, 'connected', `Connected — ${data.base_url}`, data.models || []);
       } else if (data.status === 'unavailable') {
-        setOllamaUI(dot, text, info, ollamaGroup, 'unavailable', 'Ollama library not installed (pip install ollama)', []);
+        setOllamaUI(dot, text, info, 'unavailable', 'Ollama library not installed (pip install ollama)', []);
       } else {
-        setOllamaUI(dot, text, info, ollamaGroup, 'offline', 'Ollama offline — not reachable', []);
+        setOllamaUI(dot, text, info, 'offline', 'Ollama offline — not reachable', []);
       }
     } catch (e) {
-      setOllamaUI(dot, text, info, ollamaGroup, 'offline', 'Cannot reach Ollama server', []);
+      setOllamaUI(dot, text, info, 'offline', 'Cannot reach Ollama server', []);
     }
   }
 
@@ -574,7 +569,6 @@
     const dot = document.getElementById('ollama-status-dot');
     const text = document.getElementById('ollama-status-text');
     const info = document.getElementById('ollama-models-info');
-    const ollamaGroup = document.getElementById('ollama-models-group');
 
     const newUrl = urlInput.value.trim();
     if (!newUrl) {
@@ -596,12 +590,12 @@
 
       if (resp.ok && data.success) {
         showConnectMsg('success', data.message);
-        setOllamaUI(dot, text, info, ollamaGroup, 'connected', `Connected — ${newUrl}`, data.models || []);
+        setOllamaUI(dot, text, info, 'connected', `Connected — ${newUrl}`, data.models || []);
       } else {
         const errMsg = data.error || 'Connection failed.';
         const tip = data.tip ? `<br><small style="opacity:0.8">${data.tip}</small>` : '';
         showConnectMsg('error', errMsg + tip);
-        setOllamaUI(dot, text, info, ollamaGroup, 'offline', 'Connection failed', []);
+        setOllamaUI(dot, text, info, 'offline', 'Connection failed', []);
       }
     } catch (e) {
       showConnectMsg('error', 'Network error — could not reach server.');
@@ -633,6 +627,54 @@
     return match ? match[1] : '';
   }
 
+  async function startOllama() {
+    const btn = document.getElementById('ollama-start-btn');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    try {
+      const resp = await fetch('/api/ollama/start/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrf() },
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        showConnectMsg('success', data.message);
+      } else {
+        showConnectMsg('error', data.error || 'Failed to start Ollama.');
+      }
+    } catch (e) {
+      showConnectMsg('error', 'Network error while starting Ollama.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '&#9654; Start';
+      checkOllamaStatus();
+    }
+  }
+
+  async function stopOllama() {
+    const btn = document.getElementById('ollama-stop-btn');
+    btn.disabled = true;
+    btn.textContent = 'Stopping...';
+    try {
+      const resp = await fetch('/api/ollama/stop/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrf() },
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        showConnectMsg('success', data.message);
+      } else {
+        showConnectMsg('error', data.error || data.message || 'Failed to stop Ollama.');
+      }
+    } catch (e) {
+      showConnectMsg('error', 'Network error while stopping Ollama.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '&#9632; Stop';
+      checkOllamaStatus();
+    }
+  }
+
   document.getElementById('ollama-refresh-btn').addEventListener('click', checkOllamaStatus);
 
   // Allow Enter key in URL input to trigger connect
@@ -640,14 +682,61 @@
     if (e.key === 'Enter') connectOllama();
   });
 
+  // Dynamically load all models from API
+  async function loadModels() {
+    const savedModel = localStorage.getItem('selectedModel') || 'claude-3-5-sonnet-20241022';
+    const currentValue = modelSelect.value || savedModel;
+
+    try {
+      // Clear cache so Ollama changes are reflected
+      const response = await fetch('/api/models/?refresh=1');
+      const data = await response.json();
+      const models = data.models || [];
+
+      const providerLabels = {
+        'claude': 'Claude (Anthropic)',
+        'gemini': 'Gemini (Google) - Free',
+        'ollama': 'Ollama (Local) - Free & Private'
+      };
+
+      // Group by provider
+      const groups = {};
+      models.forEach(m => {
+        const p = m.provider || 'other';
+        if (!groups[p]) groups[p] = [];
+        groups[p].push(m);
+        // Auto-add descriptions for dynamically loaded models
+        if (!modelDescriptions[m.name]) {
+          modelDescriptions[m.name] = `${m.display} - ${p === 'ollama' ? 'Local model. Free, private, runs on your machine.' : p.charAt(0).toUpperCase() + p.slice(1) + ' model.'}`;
+        }
+      });
+
+      modelSelect.innerHTML = '';
+      for (const [provider, items] of Object.entries(groups)) {
+        const group = document.createElement('optgroup');
+        group.label = providerLabels[provider] || provider;
+        items.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.name;
+          opt.textContent = m.display + (provider === 'ollama' ? ' (Local)' : '');
+          group.appendChild(opt);
+        });
+        modelSelect.appendChild(group);
+      }
+
+      // Restore selection
+      if (modelSelect.querySelector(`option[value="${currentValue}"]`)) {
+        modelSelect.value = currentValue;
+      }
+      updateModelDescription();
+    } catch (e) {
+      console.error('Failed to load models:', e);
+    }
+  }
+
   // Set up model selection
   function initializeSettings() {
-    // Set current selection from localStorage or default to Claude 3.5 Sonnet
-    const savedModel = localStorage.getItem('selectedModel') || 'claude-3-5-sonnet-20241022';
-    if (modelSelect.querySelector(`option[value="${savedModel}"]`)) {
-      modelSelect.value = savedModel;
-      updateModelDescription();
-    }
+    loadModels();
   }
 
   // Update model description when selection changes
