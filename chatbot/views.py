@@ -54,28 +54,31 @@ def get_ollama_models():
         return []
 
 
-def ask_ai(message, model='claude-3-5-sonnet-20241022', user=None):
+def ask_ai(message, model='claude-3-5-sonnet-20241022', user=None, tools_enabled=True):
     """Smart router that uses Claude, Gemini, or Ollama based on model parameter
 
     Claude models: claude-3-5-sonnet-20241022, claude-3-opus-20250219, etc.
     Gemini models: gemini-2.0-flash, gemini-1.5-flash, gemini-pro, etc.
     Ollama models: ollama:llama3.2, ollama:mistral, or any locally installed model
     """
+    # When tools are disabled, don't pass user so tool definitions are skipped
+    effective_user = user if tools_enabled else None
+
     # Determine which API to use based on model name
     if model.startswith('claude'):
-        return ask_claude(message, model, user)
+        return ask_claude(message, model, effective_user)
     elif model.startswith('gemini') or model.startswith('gpt'):
-        return ask_gemini_api(message, model, user)
+        return ask_gemini_api(message, model, effective_user)
     elif model.startswith('ollama:'):
         actual_model = model[len('ollama:'):]
-        return ask_ollama(message, actual_model, user)
+        return ask_ollama(message, actual_model, effective_user)
     else:
         # Check if it's a locally installed Ollama model
         ollama_models = get_ollama_models()
         if ollama_models and model in ollama_models:
-            return ask_ollama(message, model, user)
+            return ask_ollama(message, model, effective_user)
         # Default to Claude for unknown models
-        return ask_claude(message, model, user)
+        return ask_claude(message, model, effective_user)
 
 
 def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None):
@@ -1594,7 +1597,7 @@ def chatbot_session(request, session_id):
         message = request.POST.get('message')
         # Use model from request if provided, otherwise use session's default model
         model = request.POST.get('model', session.model)
-        response = ask_ai(message, model, user=request.user)
+        response = ask_ai(message, model, user=request.user, tools_enabled=session.tools_enabled)
 
         chat = Chat.objects.create(
             session=session,
@@ -1716,8 +1719,12 @@ def api_session_delete(request, session_id):
 @login_required
 def settings_page(request):
     """Display user settings page"""
+    session = ChatSession.objects.filter(
+        user=request.user, is_active=True
+    ).first()
     return render(request, 'settings.html', {
-        'user': request.user
+        'user': request.user,
+        'tools_enabled': session.tools_enabled if session else True,
     })
 
 
@@ -2045,11 +2052,50 @@ def api_save_settings(request):
         is_active=True
     ).first()
 
+    # Handle tools_enabled toggle
+    tools_enabled = request.POST.get('tools_enabled')
+
     if session:
         session.model = model_name
+        if tools_enabled is not None:
+            session.tools_enabled = tools_enabled.lower() in ('true', '1', 'on')
         session.save()
 
     return JsonResponse({'success': True, 'message': 'Settings saved'})
+
+
+@login_required
+def api_toggle_tools(request):
+    """Toggle AI tools (function calling) on/off"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+
+    import json
+    try:
+        data = json.loads(request.body)
+        enabled = data.get('enabled', True)
+    except (json.JSONDecodeError, AttributeError):
+        enabled = request.POST.get('enabled', 'true').lower() in ('true', '1', 'on')
+
+    # Update all active sessions for this user
+    sessions = ChatSession.objects.filter(user=request.user, is_active=True)
+    sessions.update(tools_enabled=enabled)
+
+    return JsonResponse({
+        'success': True,
+        'tools_enabled': enabled,
+        'message': f'AI tools {"enabled" if enabled else "disabled"}'
+    })
+
+
+@login_required
+def api_tools_status(request):
+    """Get current tools enabled/disabled status"""
+    session = ChatSession.objects.filter(
+        user=request.user, is_active=True
+    ).first()
+    enabled = session.tools_enabled if session else True
+    return JsonResponse({'tools_enabled': enabled})
 
 
 @login_required

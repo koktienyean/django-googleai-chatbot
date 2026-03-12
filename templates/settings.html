@@ -404,6 +404,41 @@
   </div>
 
   <div class="settings-section">
+    <h2>AI Tools (Function Calling)</h2>
+    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
+      When enabled, the AI can use tools like task management, notifications, analytics, data queries, and more.
+      Disabling tools makes responses faster, especially for smaller local models (Ollama).
+    </p>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: rgba(45, 55, 72, 0.4); border-radius: 10px; border: 1px solid var(--border-primary);">
+      <div>
+        <div style="font-weight: 600; font-size: 15px; color: var(--text-primary);">Enable AI Tools</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">31 tools: tasks, notifications, analytics, reports, skills, flows</div>
+      </div>
+      <label style="position: relative; display: inline-block; width: 52px; height: 28px; cursor: pointer;">
+        <input type="checkbox" id="tools-toggle" {% if tools_enabled %}checked{% endif %}
+          style="opacity: 0; width: 0; height: 0;">
+        <span style="
+          position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+          background: {% if tools_enabled %}var(--color-accent){% else %}var(--bg-tertiary){% endif %};
+          border-radius: 28px;
+          transition: all 0.3s ease;
+        "></span>
+        <span id="tools-toggle-knob" style="
+          position: absolute; top: 3px; {% if tools_enabled %}left: 27px{% else %}left: 3px{% endif %};
+          width: 22px; height: 22px;
+          background: white;
+          border-radius: 50%;
+          transition: all 0.3s ease;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        "></span>
+      </label>
+    </div>
+
+    <div id="tools-status-msg" class="status-message" style="margin-top: 12px;"></div>
+  </div>
+
+  <div class="settings-section">
     <h2>Ollama (Local AI)</h2>
 
     <!-- Connection status row -->
@@ -846,6 +881,47 @@
     }
     return cookieValue;
   }
+
+  // ========== Tools Toggle ==========
+  const toolsToggle = document.getElementById('tools-toggle');
+  const toolsKnob = document.getElementById('tools-toggle-knob');
+  const toolsStatusMsg = document.getElementById('tools-status-msg');
+
+  toolsToggle.addEventListener('change', async () => {
+    const enabled = toolsToggle.checked;
+    const slider = toolsToggle.nextElementSibling;
+
+    // Update visual state immediately
+    slider.style.background = enabled ? 'var(--color-accent)' : 'var(--bg-tertiary)';
+    toolsKnob.style.left = enabled ? '27px' : '3px';
+
+    try {
+      const resp = await fetch('/api/settings/tools/toggle/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({ enabled: enabled })
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        toolsStatusMsg.textContent = data.message;
+        toolsStatusMsg.className = 'status-message success';
+        setTimeout(() => { toolsStatusMsg.className = 'status-message'; }, 3000);
+      } else {
+        throw new Error(data.error || 'Failed to save');
+      }
+    } catch (e) {
+      // Revert on failure
+      toolsToggle.checked = !enabled;
+      slider.style.background = !enabled ? 'var(--color-accent)' : 'var(--bg-tertiary)';
+      toolsKnob.style.left = !enabled ? '27px' : '3px';
+      toolsStatusMsg.textContent = 'Error: ' + e.message;
+      toolsStatusMsg.className = 'status-message error';
+    }
+  });
 
   // Initialize settings when page loads
   document.addEventListener('DOMContentLoaded', () => {

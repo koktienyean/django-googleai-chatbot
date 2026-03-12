@@ -24,6 +24,8 @@ urlpatterns = [
     # Model API endpoints
     path('api/models/', views.api_list_models, name='api_models'),
     path('api/settings/save/', views.api_save_settings, name='api_settings_save'),
+    path('api/settings/tools/toggle/', views.api_toggle_tools, name='api_toggle_tools'),
+    path('api/settings/tools/status/', views.api_tools_status, name='api_tools_status'),
 
     # Async message endpoints
     path('api/sessions/<int:session_id>/send/', views.api_send_message_async, name='api_send_message_async'),
