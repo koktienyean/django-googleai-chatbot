@@ -439,6 +439,60 @@
   </div>
 
   <div class="settings-section">
+    <h2>Developer Mode</h2>
+    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
+      Shows token usage per message on the chat page — input tokens sent, output tokens received, and running totals.
+      Useful for monitoring API costs and optimizing prompts.
+    </p>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: rgba(45, 55, 72, 0.4); border-radius: 10px; border: 1px solid var(--border-primary); margin-bottom: 20px;">
+      <div>
+        <div style="font-weight: 600; font-size: 15px; color: var(--text-primary);">Enable Developer Mode</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Show token usage stats on each chat message</div>
+      </div>
+      <label style="position: relative; display: inline-block; width: 52px; height: 28px; cursor: pointer;">
+        <input type="checkbox" id="devmode-toggle" {% if developer_mode %}checked{% endif %}
+          style="opacity: 0; width: 0; height: 0;">
+        <span style="
+          position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+          background: {% if developer_mode %}var(--color-primary){% else %}var(--bg-tertiary){% endif %};
+          border-radius: 28px;
+          transition: all 0.3s ease;
+        "></span>
+        <span id="devmode-toggle-knob" style="
+          position: absolute; top: 3px; {% if developer_mode %}left: 27px{% else %}left: 3px{% endif %};
+          width: 22px; height: 22px;
+          background: white;
+          border-radius: 50%;
+          transition: all 0.3s ease;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        "></span>
+      </label>
+    </div>
+
+    <!-- History Limit -->
+    <div style="padding: 16px 20px; background: rgba(45, 55, 72, 0.4); border-radius: 10px; border: 1px solid var(--border-primary);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div>
+          <div style="font-weight: 600; font-size: 15px; color: var(--text-primary);">Chat Memory (History Limit)</div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Number of past messages included as context. More = better memory, higher token cost.</div>
+        </div>
+        <span id="history-limit-value" style="font-size: 20px; font-weight: 700; color: var(--color-primary); min-width: 40px; text-align: right;">{{ history_limit }}</span>
+      </div>
+      <input type="range" id="history-limit-slider" min="0" max="100" step="5" value="{{ history_limit }}"
+        style="width: 100%; accent-color: var(--color-primary); cursor: pointer;">
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+        <span>0 (no memory)</span>
+        <span>20 (default)</span>
+        <span>50 (deep)</span>
+        <span>100 (max)</span>
+      </div>
+    </div>
+
+    <div id="devmode-status-msg" class="status-message" style="margin-top: 12px;"></div>
+  </div>
+
+  <div class="settings-section">
     <h2>Ollama (Local AI)</h2>
 
     <!-- Connection status row -->
@@ -719,7 +773,7 @@
 
   // Dynamically load all models from API
   async function loadModels() {
-    const savedModel = localStorage.getItem('selectedModel') || 'claude-3-5-sonnet-20241022';
+    const savedModel = '{{ current_model|default:"gemini-2.0-flash" }}';
     const currentValue = modelSelect.value || savedModel;
 
     try {
@@ -920,6 +974,75 @@
       toolsKnob.style.left = !enabled ? '27px' : '3px';
       toolsStatusMsg.textContent = 'Error: ' + e.message;
       toolsStatusMsg.className = 'status-message error';
+    }
+  });
+
+  // ========== Developer Mode Toggle ==========
+  const devmodeToggle = document.getElementById('devmode-toggle');
+  const devmodeKnob = document.getElementById('devmode-toggle-knob');
+  const devmodeStatusMsg = document.getElementById('devmode-status-msg');
+
+  devmodeToggle.addEventListener('change', async () => {
+    const enabled = devmodeToggle.checked;
+    const slider = devmodeToggle.nextElementSibling;
+
+    slider.style.background = enabled ? 'var(--color-primary)' : 'var(--bg-tertiary)';
+    devmodeKnob.style.left = enabled ? '27px' : '3px';
+
+    try {
+      const resp = await fetch('/api/settings/developer-mode/toggle/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ enabled: enabled })
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        devmodeStatusMsg.textContent = data.message;
+        devmodeStatusMsg.className = 'status-message success';
+        setTimeout(() => { devmodeStatusMsg.className = 'status-message'; }, 3000);
+      } else {
+        throw new Error(data.error || 'Failed to save');
+      }
+    } catch (e) {
+      devmodeToggle.checked = !enabled;
+      slider.style.background = !enabled ? 'var(--color-primary)' : 'var(--bg-tertiary)';
+      devmodeKnob.style.left = !enabled ? '27px' : '3px';
+      devmodeStatusMsg.textContent = 'Error: ' + e.message;
+      devmodeStatusMsg.className = 'status-message error';
+    }
+  });
+
+  // ========== History Limit Slider ==========
+  const historySlider = document.getElementById('history-limit-slider');
+  const historyValue = document.getElementById('history-limit-value');
+  let historyDebounce = null;
+
+  historySlider.addEventListener('input', () => {
+    historyValue.textContent = historySlider.value;
+  });
+
+  historySlider.addEventListener('change', async () => {
+    const limit = parseInt(historySlider.value);
+
+    try {
+      const resp = await fetch('/api/settings/history-limit/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ limit: limit })
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        devmodeStatusMsg.textContent = data.message;
+        devmodeStatusMsg.className = 'status-message success';
+        setTimeout(() => { devmodeStatusMsg.className = 'status-message'; }, 3000);
+      } else {
+        throw new Error(data.error || 'Failed to save');
+      }
+    } catch (e) {
+      devmodeStatusMsg.textContent = 'Error: ' + e.message;
+      devmodeStatusMsg.className = 'status-message error';
     }
   });
 

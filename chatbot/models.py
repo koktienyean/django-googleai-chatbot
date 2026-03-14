@@ -11,6 +11,8 @@ class ChatSession(models.Model):
     name = models.CharField(max_length=200, default='Chat')
     model = models.CharField(max_length=100, default='gemini-2.0-flash')
     tools_enabled = models.BooleanField(default=True)
+    developer_mode = models.BooleanField(default=False)
+    history_limit = models.IntegerField(default=20, help_text="Number of past messages to include as context (0=no memory)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)

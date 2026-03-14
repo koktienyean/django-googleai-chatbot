@@ -26,6 +26,8 @@ urlpatterns = [
     path('api/settings/save/', views.api_save_settings, name='api_settings_save'),
     path('api/settings/tools/toggle/', views.api_toggle_tools, name='api_toggle_tools'),
     path('api/settings/tools/status/', views.api_tools_status, name='api_tools_status'),
+    path('api/settings/developer-mode/toggle/', views.api_toggle_developer_mode, name='api_toggle_developer_mode'),
+    path('api/settings/history-limit/', views.api_set_history_limit, name='api_set_history_limit'),
 
     # Async message endpoints
     path('api/sessions/<int:session_id>/send/', views.api_send_message_async, name='api_send_message_async'),

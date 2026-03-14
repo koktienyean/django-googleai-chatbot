@@ -54,7 +54,7 @@ def get_ollama_models():
         return []
 
 
-def ask_ai(message, model='claude-3-5-sonnet-20241022', user=None, tools_enabled=True):
+def ask_ai(message, model='claude-3-5-sonnet-20241022', user=None, tools_enabled=True, session=None):
     """Smart router that uses Claude, Gemini, or Ollama based on model parameter
 
     Claude models: claude-3-5-sonnet-20241022, claude-3-opus-20250219, etc.
@@ -64,24 +64,34 @@ def ask_ai(message, model='claude-3-5-sonnet-20241022', user=None, tools_enabled
     # When tools are disabled, don't pass user so tool definitions are skipped
     effective_user = user if tools_enabled else None
 
+    # Build chat history from session using configurable limit
+    history = []
+    if session:
+        limit = session.history_limit or 20
+        if limit > 0:
+            past_messages = session.messages.filter(is_deleted=False).order_by('-created_at')[:limit]
+            for chat in reversed(past_messages):
+                history.append({"role": "user", "content": chat.message})
+                history.append({"role": "assistant", "content": chat.response})
+
     # Determine which API to use based on model name
     if model.startswith('claude'):
-        return ask_claude(message, model, effective_user)
+        return ask_claude(message, model, effective_user, history=history)
     elif model.startswith('gemini') or model.startswith('gpt'):
-        return ask_gemini_api(message, model, effective_user)
+        return ask_gemini_api(message, model, effective_user, history=history)
     elif model.startswith('ollama:'):
         actual_model = model[len('ollama:'):]
-        return ask_ollama(message, actual_model, effective_user)
+        return ask_ollama(message, actual_model, effective_user, history=history)
     else:
         # Check if it's a locally installed Ollama model
         ollama_models = get_ollama_models()
         if ollama_models and model in ollama_models:
-            return ask_ollama(message, model, effective_user)
+            return ask_ollama(message, model, effective_user, history=history)
         # Default to Claude for unknown models
-        return ask_claude(message, model, effective_user)
+        return ask_claude(message, model, effective_user, history=history)
 
 
-def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None):
+def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None, history=None):
     """Call Claude API and return response text.
     Uses shared tool definitions from chatbot.tools package.
     """
@@ -90,7 +100,10 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None):
     try:
         tools = format_tools_for_claude(user) if user else []
 
-        messages = [{"role": "user", "content": message}]
+        messages = []
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": message})
 
         # Call Claude API with tools
         response = client.messages.create(
@@ -143,21 +156,38 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None):
             if hasattr(block, 'text'):
                 text_content += block.text
 
-        return text_content if text_content else "No response generated"
+        # Extract token usage from Claude response
+        token_info = {}
+        if hasattr(response, 'usage'):
+            token_info = {
+                'input_tokens': response.usage.input_tokens,
+                'output_tokens': response.usage.output_tokens,
+            }
+
+        return (text_content if text_content else "No response generated", token_info)
 
     except Exception as e:
-        return f"Error: {str(e)}"
+        return (f"Error: {str(e)}", {})
 
 
-def ask_gemini_api(message, model='gemini-2.5-flash', user=None):
+def ask_gemini_api(message, model='gemini-2.5-flash', user=None, history=None):
     """Call Gemini (Google Generative AI) API and return response text.
     Uses shared tool definitions from chatbot.tools package.
     """
     from chatbot.tools import format_tools_for_gemini, execute_tool, SYSTEM_INSTRUCTION
 
     try:
+        # Build Gemini-format history from chat history
+        gemini_history = []
+        if history:
+            for msg in history:
+                gemini_history.append({
+                    'role': msg['role'] if msg['role'] == 'user' else 'model',
+                    'parts': [msg['content']]
+                })
+
         model_obj = genai.GenerativeModel(model)
-        chat = model_obj.start_chat()
+        chat = model_obj.start_chat(history=gemini_history if gemini_history else None)
 
         # Prepend system instruction to the user message
         full_message = f"{SYSTEM_INSTRUCTION}\n\n{message}" if SYSTEM_INSTRUCTION else message
@@ -172,7 +202,7 @@ def ask_gemini_api(message, model='gemini-2.5-flash', user=None):
             if tools:
                 # Re-create model with tools for newer versions
                 model_obj = genai.GenerativeModel(model, tools=tools, system_instruction=SYSTEM_INSTRUCTION)
-                chat = model_obj.start_chat()
+                chat = model_obj.start_chat(history=gemini_history if gemini_history else None)
                 full_message = message  # system_instruction already set
 
             response = chat.send_message(full_message)
@@ -206,23 +236,33 @@ def ask_gemini_api(message, model='gemini-2.5-flash', user=None):
             # Older google-generativeai (<=0.3.x): no tools/function calling support
             response = chat.send_message(full_message)
 
-        return response.text
+        # Extract token usage from Gemini response
+        token_info = {}
+        if hasattr(response, 'usage_metadata'):
+            meta = response.usage_metadata
+            token_info = {
+                'input_tokens': getattr(meta, 'prompt_token_count', 0),
+                'output_tokens': getattr(meta, 'candidates_token_count', 0),
+            }
+
+        return (response.text, token_info)
     except Exception as e:
-        return f"Error: {str(e)}"
+        return (f"Error: {str(e)}", {})
 
 
 def ask_gemini(message, model='claude-3-5-sonnet-20241022', user=None):
     """Legacy wrapper that now calls ask_ai() - supports both Claude and Gemini"""
-    return ask_ai(message, model, user)
+    result = ask_ai(message, model, user)
+    return result[0] if isinstance(result, tuple) else result
 
 
-def ask_ollama(message, model=None, user=None):
+def ask_ollama(message, model=None, user=None, history=None):
     """Call local Ollama API and return response text.
     Uses shared tool definitions from chatbot.tools package.
     Supports tool/function calling for compatible models.
     """
     if not OLLAMA_AVAILABLE:
-        return "Error: Ollama library not installed. Run: pip install ollama"
+        return ("Error: Ollama library not installed. Run: pip install ollama", {})
 
     from chatbot.tools import format_tools_for_ollama, execute_tool, SYSTEM_INSTRUCTION
 
@@ -232,11 +272,18 @@ def ask_ollama(message, model=None, user=None):
         oc = ollama_client.Client(host=OLLAMA_BASE_URL)
 
         tools = format_tools_for_ollama(user) if user else []
-        messages = [{"role": "user", "content": message}]
+        messages = []
 
         # Add system instruction when tools are available
         if tools:
-            messages.insert(0, {"role": "system", "content": SYSTEM_INSTRUCTION})
+            messages.append({"role": "system", "content": SYSTEM_INSTRUCTION})
+
+        # Add chat history for context
+        if history:
+            messages.extend(history)
+
+        # Add current message
+        messages.append({"role": "user", "content": message})
 
         # Call Ollama with tools
         response = oc.chat(
@@ -268,13 +315,23 @@ def ask_ollama(message, model=None, user=None):
                 tools=tools if tools else None
             )
 
-        return response.get('message', {}).get('content', 'No response generated')
+        text = response.get('message', {}).get('content', 'No response generated')
+
+        # Extract token usage from Ollama response
+        token_info = {}
+        if 'prompt_eval_count' in response or 'eval_count' in response:
+            token_info = {
+                'input_tokens': response.get('prompt_eval_count', 0),
+                'output_tokens': response.get('eval_count', 0),
+            }
+
+        return (text, token_info)
 
     except Exception as e:
         error_msg = str(e)
         if 'connection' in error_msg.lower() or 'refused' in error_msg.lower():
-            return "Error: Cannot connect to Ollama. Make sure Ollama is running (ollama serve)"
-        return f"Ollama Error: {error_msg}"
+            return ("Error: Cannot connect to Ollama. Make sure Ollama is running (ollama serve)", {})
+        return (f"Ollama Error: {error_msg}", {})
 
 
 def ask_openai(request, message, model='gemini-1.5-flash'):
@@ -1597,24 +1654,37 @@ def chatbot_session(request, session_id):
         message = request.POST.get('message')
         # Use model from request if provided, otherwise use session's default model
         model = request.POST.get('model', session.model)
-        response = ask_ai(message, model, user=request.user, tools_enabled=session.tools_enabled)
+        result = ask_ai(message, model, user=request.user, tools_enabled=session.tools_enabled, session=session)
+
+        # Unpack response tuple (text, token_info)
+        if isinstance(result, tuple):
+            response_text, token_info = result
+        else:
+            response_text, token_info = result, {}
 
         chat = Chat.objects.create(
             session=session,
             message=message,
-            response=response
+            response=response_text
         )
 
-        return JsonResponse({
+        response_data = {
             'message': message,
             'response': chat.response_md(),
             'id': chat.id
-        })
+        }
+
+        # Include token usage when developer mode is on
+        if session.developer_mode and token_info:
+            response_data['token_usage'] = token_info
+
+        return JsonResponse(response_data)
 
     messages = session.messages.filter(is_deleted=False)
     return render(request, 'chatbot.html', {
         'session': session,
-        'messages': messages
+        'messages': messages,
+        'developer_mode': session.developer_mode,
     })
 
 
@@ -1641,7 +1711,10 @@ def api_session_create(request):
         return JsonResponse({'error': 'POST required'}, status=400)
 
     name = request.POST.get('name', 'New Chat')
-    model = request.POST.get('model', 'claude-3-5-sonnet-20241022')
+    # Use the user's last active session model as default, fallback to gemini
+    latest_session = ChatSession.objects.filter(user=request.user, is_active=True).first()
+    default_model = latest_session.model if latest_session else 'gemini-2.0-flash'
+    model = request.POST.get('model', default_model)
 
     session = ChatSession.objects.create(
         user=request.user,
@@ -1725,6 +1798,9 @@ def settings_page(request):
     return render(request, 'settings.html', {
         'user': request.user,
         'tools_enabled': session.tools_enabled if session else True,
+        'current_model': session.model if session else 'gemini-2.0-flash',
+        'developer_mode': session.developer_mode if session else False,
+        'history_limit': session.history_limit if session else 20,
     })
 
 
@@ -2041,27 +2117,40 @@ def api_save_settings(request):
         'gemini-pro',
     ]
 
-    # Also accept any ollama: prefixed model
+    # Also accept any ollama: prefixed model or locally installed Ollama model
     is_ollama_model = model_name.startswith('ollama:')
+    if not is_ollama_model:
+        # Check if it's a locally installed Ollama model
+        ollama_models = get_ollama_models()
+        if model_name in ollama_models:
+            is_ollama_model = True
+
     if model_name not in valid_models and not is_ollama_model:
         return JsonResponse({'error': f'Invalid model: {model_name}'}, status=400)
 
-    # Get or create current session and update model
-    session = ChatSession.objects.filter(
+    # Update ALL active sessions for this user to use the new default model
+    sessions = ChatSession.objects.filter(
         user=request.user,
         is_active=True
-    ).first()
+    )
 
     # Handle tools_enabled toggle
     tools_enabled = request.POST.get('tools_enabled')
 
-    if session:
-        session.model = model_name
-        if tools_enabled is not None:
-            session.tools_enabled = tools_enabled.lower() in ('true', '1', 'on')
-        session.save()
+    updated = sessions.update(model=model_name)
+    if tools_enabled is not None:
+        enabled_val = tools_enabled.lower() in ('true', '1', 'on')
+        sessions.update(tools_enabled=enabled_val)
 
-    return JsonResponse({'success': True, 'message': 'Settings saved'})
+    if updated == 0:
+        # No active sessions — create one with the selected model
+        ChatSession.objects.create(
+            user=request.user,
+            name='Chat',
+            model=model_name
+        )
+
+    return JsonResponse({'success': True, 'message': f'Default model set to {model_name}'})
 
 
 @login_required
@@ -2096,6 +2185,54 @@ def api_tools_status(request):
     ).first()
     enabled = session.tools_enabled if session else True
     return JsonResponse({'tools_enabled': enabled})
+
+
+@login_required
+def api_toggle_developer_mode(request):
+    """Toggle developer mode on/off"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+
+    import json
+    try:
+        data = json.loads(request.body)
+        enabled = data.get('enabled', False)
+    except (json.JSONDecodeError, AttributeError):
+        enabled = request.POST.get('enabled', 'false').lower() in ('true', '1', 'on')
+
+    sessions = ChatSession.objects.filter(user=request.user, is_active=True)
+    sessions.update(developer_mode=enabled)
+
+    return JsonResponse({
+        'success': True,
+        'developer_mode': enabled,
+        'message': f'Developer mode {"enabled" if enabled else "disabled"}'
+    })
+
+
+@login_required
+def api_set_history_limit(request):
+    """Set chat history context limit"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+
+    import json
+    try:
+        data = json.loads(request.body)
+        limit = int(data.get('limit', 20))
+    except (json.JSONDecodeError, AttributeError, ValueError):
+        return JsonResponse({'error': 'Invalid limit value'}, status=400)
+
+    limit = max(0, min(limit, 100))  # Clamp between 0 and 100
+
+    sessions = ChatSession.objects.filter(user=request.user, is_active=True)
+    sessions.update(history_limit=limit)
+
+    return JsonResponse({
+        'success': True,
+        'history_limit': limit,
+        'message': f'History limit set to {limit} messages' if limit > 0 else 'Chat memory disabled'
+    })
 
 
 @login_required

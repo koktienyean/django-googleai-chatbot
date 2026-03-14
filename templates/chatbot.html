@@ -1015,6 +1015,23 @@
           <option value="" disabled selected>Loading models...</option>
         </select>
       </div>
+      {% if developer_mode %}
+      <div id="token-counter" style="
+        display: flex; align-items: center; gap: 12px;
+        padding: 6px 14px;
+        background: rgba(0, 217, 255, 0.08);
+        border: 1px solid rgba(0, 217, 255, 0.2);
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: var(--text-secondary, #a0a0a0);
+        white-space: nowrap;
+      ">
+        <span title="Total input tokens sent">IN: <strong id="token-in" style="color: #00d9ff;">0</strong></span>
+        <span title="Total output tokens received">OUT: <strong id="token-out" style="color: #06d6a0;">0</strong></span>
+        <span title="Total tokens used">TOTAL: <strong id="token-total" style="color: #ff006e;">0</strong></span>
+      </div>
+      {% endif %}
     </div>
 
     <div class="messages-box" id="messages-box">
@@ -1294,8 +1311,36 @@
       // Process and render data visualizations if present
       const processedResponse = processDataVisualization(data.response);
 
+      // Build token badge if developer mode and token data available
+      let tokenBadge = '';
+      if (data.token_usage) {
+        const inp = data.token_usage.input_tokens || 0;
+        const out = data.token_usage.output_tokens || 0;
+        tokenBadge = `<div style="
+          margin-top: 8px; padding: 4px 10px;
+          background: rgba(0,217,255,0.06); border: 1px solid rgba(0,217,255,0.15);
+          border-radius: 6px; font-size: 10px; font-family: 'JetBrains Mono', monospace;
+          color: #808080; display: inline-flex; gap: 10px;
+        ">
+          <span>IN: <b style="color:#00d9ff">${inp.toLocaleString()}</b></span>
+          <span>OUT: <b style="color:#06d6a0">${out.toLocaleString()}</b></span>
+        </div>`;
+
+        // Update running totals
+        const tokenInEl = document.getElementById('token-in');
+        const tokenOutEl = document.getElementById('token-out');
+        const tokenTotalEl = document.getElementById('token-total');
+        if (tokenInEl) {
+          const totalIn = parseInt(tokenInEl.textContent.replace(/,/g, '') || '0') + inp;
+          const totalOut = parseInt(tokenOutEl.textContent.replace(/,/g, '') || '0') + out;
+          tokenInEl.textContent = totalIn.toLocaleString();
+          tokenOutEl.textContent = totalOut.toLocaleString();
+          tokenTotalEl.textContent = (totalIn + totalOut).toLocaleString();
+        }
+      }
+
       // Replace loading message with actual response
-      loadingMsg.innerHTML = `<div class="message-content">${processedResponse}</div>`;
+      loadingMsg.innerHTML = `<div class="message-content">${processedResponse}${tokenBadge}</div>`;
       loadSessions();
     } catch (error) {
       loadingMsg.innerHTML = `<div class="message-content">Error: ${error.message}</div>`;
