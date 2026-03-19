@@ -217,6 +217,22 @@ def format_tools_for_gemini(user=None):
         from chatbot.tools.executors import execute_tool
         return execute_tool(user, 'improve_skill_tool', {'skill_name': skill_name})
 
+    # External DB Query (SIG_Chart)
+    def get_db_schema_tool():
+        """Get full database schema: all tables, columns with descriptions, join relationships, and module groupings. Call this first before writing any SQL query."""
+        from chatbot.tools.sig_query import get_schema
+        return get_schema()
+
+    def get_sample_data_tool(table: str, limit: int = 5):
+        """Get top N sample rows from a database table to understand data patterns and actual values. Use this to inspect a table before writing queries."""
+        from chatbot.tools.sig_query import get_sample_data
+        return get_sample_data(table, limit)
+
+    def execute_sql_tool(sql: str, limit: int = 100):
+        """Execute a raw SELECT SQL query against the PostgreSQL database. Only SELECT queries allowed. Use double quotes for table/column names. Max 1000 rows, 10s timeout."""
+        from chatbot.tools.sig_query import execute_sql
+        return execute_sql(sql, limit)
+
     return [
         # Chat history
         search_chats_tool, get_stats_tool, get_recent_tool,
@@ -238,6 +254,8 @@ def format_tools_for_gemini(user=None):
         # Skill & Flow Engine
         list_skills_tool, create_skill_tool, list_flows_tool, create_flow_tool,
         run_flow_tool, submit_skill_feedback_tool, get_skill_stats_tool, improve_skill_tool,
+        # External DB Query
+        get_db_schema_tool, get_sample_data_tool, execute_sql_tool,
     ]
 
 

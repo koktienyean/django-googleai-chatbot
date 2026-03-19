@@ -96,6 +96,11 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None, history=N
     Uses shared tool definitions from chatbot.tools package.
     """
     from chatbot.tools import format_tools_for_claude, execute_tool, SYSTEM_INSTRUCTION
+    import json as _json
+
+    debug_trace = []  # Developer mode trace log
+    total_in = 0
+    total_out = 0
 
     try:
         tools = format_tools_for_claude(user) if user else []
@@ -104,6 +109,19 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None, history=N
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": message})
+
+        # Log what we send to the LLM
+        debug_trace.append({
+            'step': 'request',
+            'label': 'Sent to Claude',
+            'data': {
+                'model': model,
+                'system': (SYSTEM_INSTRUCTION[:200] + '...') if tools and SYSTEM_INSTRUCTION else None,
+                'tools_count': len(tools),
+                'messages_count': len(messages),
+                'user_message': message,
+            }
+        })
 
         # Call Claude API with tools
         response = client.messages.create(
@@ -114,8 +132,15 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None, history=N
             messages=messages
         )
 
+        # Track tokens per round
+        if hasattr(response, 'usage'):
+            total_in += response.usage.input_tokens
+            total_out += response.usage.output_tokens
+
         # Handle tool use in responses
+        round_num = 0
         while response.stop_reason == "tool_use":
+            round_num += 1
             tool_use_block = None
             for block in response.content:
                 if block.type == "tool_use":
@@ -127,6 +152,21 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None, history=N
 
             # Dispatch through shared executor
             result = execute_tool(user, tool_use_block.name, tool_use_block.input)
+
+            # Log tool call
+            debug_trace.append({
+                'step': 'tool_call',
+                'label': f'Tool Call #{round_num}: {tool_use_block.name}',
+                'data': {
+                    'function': tool_use_block.name,
+                    'args': tool_use_block.input,
+                    'result_preview': str(result)[:500],
+                },
+                'tokens': {
+                    'input': getattr(response.usage, 'input_tokens', 0) if hasattr(response, 'usage') else 0,
+                    'output': getattr(response.usage, 'output_tokens', 0) if hasattr(response, 'usage') else 0,
+                }
+            })
 
             # Continue the conversation with the tool result
             messages.append({"role": "assistant", "content": response.content})
@@ -150,24 +190,35 @@ def ask_claude(message, model='claude-3-5-sonnet-20241022', user=None, history=N
                 messages=messages
             )
 
+            # Track tokens per round
+            if hasattr(response, 'usage'):
+                total_in += response.usage.input_tokens
+                total_out += response.usage.output_tokens
+
         # Extract text from response
         text_content = ""
         for block in response.content:
             if hasattr(block, 'text'):
                 text_content += block.text
 
-        # Extract token usage from Claude response
-        token_info = {}
-        if hasattr(response, 'usage'):
-            token_info = {
-                'input_tokens': response.usage.input_tokens,
-                'output_tokens': response.usage.output_tokens,
-            }
+        # Log final response
+        debug_trace.append({
+            'step': 'response',
+            'label': 'Final Response',
+            'data': {
+                'stop_reason': response.stop_reason,
+                'response_preview': (text_content[:300] + '...') if len(text_content) > 300 else text_content,
+            },
+            'tokens': {'input': total_in, 'output': total_out}
+        })
 
-        return (text_content if text_content else "No response generated", token_info)
+        token_info = {'input_tokens': total_in, 'output_tokens': total_out}
+
+        return (text_content if text_content else "No response generated", token_info, debug_trace)
 
     except Exception as e:
-        return (f"Error: {str(e)}", {})
+        debug_trace.append({'step': 'error', 'label': 'Error', 'data': {'error': str(e)}})
+        return (f"Error: {str(e)}", {}, debug_trace)
 
 
 def ask_gemini_api(message, model='gemini-2.5-flash', user=None, history=None):
@@ -175,6 +226,10 @@ def ask_gemini_api(message, model='gemini-2.5-flash', user=None, history=None):
     Uses shared tool definitions from chatbot.tools package.
     """
     from chatbot.tools import format_tools_for_gemini, execute_tool, SYSTEM_INSTRUCTION
+
+    debug_trace = []
+    total_in = 0
+    total_out = 0
 
     try:
         # Build Gemini-format history from chat history
@@ -205,20 +260,44 @@ def ask_gemini_api(message, model='gemini-2.5-flash', user=None, history=None):
                 chat = model_obj.start_chat(history=gemini_history if gemini_history else None)
                 full_message = message  # system_instruction already set
 
+            debug_trace.append({
+                'step': 'request',
+                'label': 'Sent to Gemini',
+                'data': {
+                    'model': model,
+                    'tools_count': len(tools) if tools else 0,
+                    'history_count': len(gemini_history),
+                    'user_message': message,
+                }
+            })
+
             response = chat.send_message(full_message)
 
             # Handle function calling responses
+            round_num = 0
             while response.candidates and response.candidates[0].content.parts:
                 last_part = response.candidates[0].content.parts[-1]
 
                 if not hasattr(last_part, 'function_call') or not last_part.function_call:
                     break
 
+                round_num += 1
                 function_call = last_part.function_call
                 function_name = function_call.name
                 function_args = function_call.args
 
                 result = execute_tool(user, function_name, dict(function_args))
+
+                # Log tool call
+                debug_trace.append({
+                    'step': 'tool_call',
+                    'label': f'Tool Call #{round_num}: {function_name}',
+                    'data': {
+                        'function': function_name,
+                        'args': dict(function_args) if function_args else {},
+                        'result_preview': str(result)[:500],
+                    }
+                })
 
                 response = chat.send_message(
                     genai.protos.Content(
@@ -233,6 +312,11 @@ def ask_gemini_api(message, model='gemini-2.5-flash', user=None, history=None):
                     )
                 )
         else:
+            debug_trace.append({
+                'step': 'request',
+                'label': 'Sent to Gemini (no tools)',
+                'data': {'model': model, 'user_message': message}
+            })
             # Older google-generativeai (<=0.3.x): no tools/function calling support
             response = chat.send_message(full_message)
 
@@ -240,14 +324,27 @@ def ask_gemini_api(message, model='gemini-2.5-flash', user=None, history=None):
         token_info = {}
         if hasattr(response, 'usage_metadata'):
             meta = response.usage_metadata
+            total_in = getattr(meta, 'prompt_token_count', 0)
+            total_out = getattr(meta, 'candidates_token_count', 0)
             token_info = {
-                'input_tokens': getattr(meta, 'prompt_token_count', 0),
-                'output_tokens': getattr(meta, 'candidates_token_count', 0),
+                'input_tokens': total_in,
+                'output_tokens': total_out,
             }
 
-        return (response.text, token_info)
+        resp_text = response.text
+        debug_trace.append({
+            'step': 'response',
+            'label': 'Final Response',
+            'data': {
+                'response_preview': (resp_text[:300] + '...') if len(resp_text) > 300 else resp_text,
+            },
+            'tokens': {'input': total_in, 'output': total_out}
+        })
+
+        return (resp_text, token_info, debug_trace)
     except Exception as e:
-        return (f"Error: {str(e)}", {})
+        debug_trace.append({'step': 'error', 'label': 'Error', 'data': {'error': str(e)}})
+        return (f"Error: {str(e)}", {}, debug_trace)
 
 
 def ask_gemini(message, model='claude-3-5-sonnet-20241022', user=None):
@@ -262,10 +359,11 @@ def ask_ollama(message, model=None, user=None, history=None):
     Supports tool/function calling for compatible models.
     """
     if not OLLAMA_AVAILABLE:
-        return ("Error: Ollama library not installed. Run: pip install ollama", {})
+        return ("Error: Ollama library not installed. Run: pip install ollama", {}, [])
 
     from chatbot.tools import format_tools_for_ollama, execute_tool, SYSTEM_INSTRUCTION
 
+    debug_trace = []
     model = model or OLLAMA_DEFAULT_MODEL
 
     try:
@@ -285,6 +383,17 @@ def ask_ollama(message, model=None, user=None, history=None):
         # Add current message
         messages.append({"role": "user", "content": message})
 
+        debug_trace.append({
+            'step': 'request',
+            'label': 'Sent to Ollama',
+            'data': {
+                'model': model,
+                'tools_count': len(tools),
+                'messages_count': len(messages),
+                'user_message': message,
+            }
+        })
+
         # Call Ollama with tools
         response = oc.chat(
             model=model,
@@ -293,14 +402,26 @@ def ask_ollama(message, model=None, user=None, history=None):
         )
 
         # Handle tool calls in response
+        round_num = 0
         while response.get('message', {}).get('tool_calls'):
             # Append assistant message with tool calls
             messages.append(response['message'])
 
             for tool_call in response['message']['tool_calls']:
+                round_num += 1
                 func_name = tool_call['function']['name']
                 func_args = tool_call['function']['arguments']
                 result = execute_tool(user, func_name, func_args)
+
+                debug_trace.append({
+                    'step': 'tool_call',
+                    'label': f'Tool Call #{round_num}: {func_name}',
+                    'data': {
+                        'function': func_name,
+                        'args': func_args,
+                        'result_preview': str(result)[:500],
+                    }
+                })
 
                 # Append tool result
                 messages.append({
@@ -317,21 +438,78 @@ def ask_ollama(message, model=None, user=None, history=None):
 
         text = response.get('message', {}).get('content', 'No response generated')
 
+        # Fallback: some smaller models output tool calls as plain text JSON
+        # instead of using the structured tool_calls field.
+        # Detect and execute them.
+        import json as _json
+        import re as _re
+        if text and not round_num and tools:
+            # Try to parse JSON tool call from text output
+            stripped = text.strip()
+            # Match patterns like {"name": "...", "arguments": {...}}
+            json_match = _re.search(r'\{[^{}]*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}[^}]*\}', stripped)
+            if json_match:
+                try:
+                    tool_json = _json.loads(json_match.group())
+                    func_name = tool_json.get('name')
+                    func_args = tool_json.get('arguments', {})
+                    if func_name:
+                        round_num += 1
+                        result = execute_tool(user, func_name, func_args)
+
+                        debug_trace.append({
+                            'step': 'tool_call',
+                            'label': f'Tool Call #{round_num} (text-parsed): {func_name}',
+                            'data': {
+                                'function': func_name,
+                                'args': func_args,
+                                'result_preview': str(result)[:500],
+                                'note': 'Model output tool call as text, auto-executed',
+                            }
+                        })
+
+                        # Send tool result back to model for a natural response
+                        messages.append(response['message'])
+                        messages.append({
+                            "role": "tool",
+                            "content": str(result)
+                        })
+                        response = oc.chat(
+                            model=model,
+                            messages=messages,
+                            tools=tools if tools else None
+                        )
+                        text = response.get('message', {}).get('content', str(result))
+                except (_json.JSONDecodeError, KeyError):
+                    pass  # Not valid JSON, use text as-is
+
         # Extract token usage from Ollama response
         token_info = {}
-        if 'prompt_eval_count' in response or 'eval_count' in response:
+        total_in = response.get('prompt_eval_count', 0)
+        total_out = response.get('eval_count', 0)
+        if total_in or total_out:
             token_info = {
-                'input_tokens': response.get('prompt_eval_count', 0),
-                'output_tokens': response.get('eval_count', 0),
+                'input_tokens': total_in,
+                'output_tokens': total_out,
             }
 
-        return (text, token_info)
+        debug_trace.append({
+            'step': 'response',
+            'label': 'Final Response',
+            'data': {
+                'response_preview': (text[:300] + '...') if len(text) > 300 else text,
+            },
+            'tokens': {'input': total_in, 'output': total_out}
+        })
+
+        return (text, token_info, debug_trace)
 
     except Exception as e:
         error_msg = str(e)
+        debug_trace.append({'step': 'error', 'label': 'Error', 'data': {'error': error_msg}})
         if 'connection' in error_msg.lower() or 'refused' in error_msg.lower():
-            return ("Error: Cannot connect to Ollama. Make sure Ollama is running (ollama serve)", {})
-        return (f"Ollama Error: {error_msg}", {})
+            return ("Error: Cannot connect to Ollama. Make sure Ollama is running (ollama serve)", {}, debug_trace)
+        return (f"Ollama Error: {error_msg}", {}, debug_trace)
 
 
 def ask_openai(request, message, model='gemini-1.5-flash'):
@@ -1656,11 +1834,15 @@ def chatbot_session(request, session_id):
         model = request.POST.get('model', session.model)
         result = ask_ai(message, model, user=request.user, tools_enabled=session.tools_enabled, session=session)
 
-        # Unpack response tuple (text, token_info)
+        # Unpack response tuple (text, token_info, debug_trace)
         if isinstance(result, tuple):
-            response_text, token_info = result
+            if len(result) == 3:
+                response_text, token_info, debug_trace = result
+            else:
+                response_text, token_info = result
+                debug_trace = []
         else:
-            response_text, token_info = result, {}
+            response_text, token_info, debug_trace = result, {}, []
 
         chat = Chat.objects.create(
             session=session,
@@ -1674,9 +1856,11 @@ def chatbot_session(request, session_id):
             'id': chat.id
         }
 
-        # Include token usage when developer mode is on
+        # Include token usage and debug trace when developer mode is on
         if session.developer_mode and token_info:
             response_data['token_usage'] = token_info
+        if session.developer_mode and debug_trace:
+            response_data['debug_trace'] = debug_trace
 
         return JsonResponse(response_data)
 

@@ -29,6 +29,12 @@ For task status, accept any reasonable input and normalize to: pending, in_progr
 
 For data queries, use query_data_tool for raw lookups and generate_report_tool for formatted reports with insights.
 
+When the user asks about external database data (production, sales, machines, planning, packing, etc.):
+- Query external database: First call get_db_schema_tool to learn the schema, optionally call get_sample_data_tool to see real data patterns, then call execute_sql_tool with a SELECT query
+- Always use PostgreSQL syntax with double-quoted identifiers for table/column names (e.g., "Machine_Name", "PTS_PlanningHeader")
+- Never use INSERT/UPDATE/DELETE - only SELECT queries are allowed
+- Present query results in a clear formatted table or summary
+
 Always call the tool first, then provide a friendly response about what was done."""
 
 
@@ -402,5 +408,30 @@ def get_tool_definitions():
                 "skill_name": {"type": "string", "description": "Name of the skill to improve"},
             },
             "required": ["skill_name"],
+        },
+        # ========== EXTERNAL DB QUERY (SIG_Chart) ==========
+        {
+            "name": "get_db_schema_tool",
+            "description": "Get full database schema: all tables, columns with descriptions, join relationships, and module groupings. Call this first before writing any SQL query. Returns PostgreSQL database structure.",
+            "parameters": {},
+            "required": [],
+        },
+        {
+            "name": "get_sample_data_tool",
+            "description": "Get top N sample rows from a database table to understand data patterns and actual values. Use this to inspect a table before writing queries.",
+            "parameters": {
+                "table": {"type": "string", "description": "Table name (e.g., PTS_PlanningHeader, SetupPartNo)"},
+                "limit": {"type": "integer", "default": 5, "description": "Number of sample rows (max 20)"},
+            },
+            "required": ["table"],
+        },
+        {
+            "name": "execute_sql_tool",
+            "description": "Execute a raw SELECT SQL query against the PostgreSQL database. Only SELECT queries allowed. Use double quotes for table/column names. Max 1000 rows, 10s timeout. Always call get_db_schema_tool first to learn the schema.",
+            "parameters": {
+                "sql": {"type": "string", "description": "SELECT SQL query (PostgreSQL syntax, double-quote identifiers)"},
+                "limit": {"type": "integer", "default": 100, "description": "Max rows to return (max 1000)"},
+            },
+            "required": ["sql"],
         },
     ]

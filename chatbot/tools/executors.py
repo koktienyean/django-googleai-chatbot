@@ -236,5 +236,16 @@ def execute_tool(user, function_name, function_args):
         improver = SkillImprover(user)
         return improver.suggest_improvement(skill)
 
+    # External DB Query (SIG_Chart)
+    elif function_name == 'get_db_schema_tool':
+        from chatbot.tools.sig_query import get_schema
+        return get_schema()
+    elif function_name == 'get_sample_data_tool':
+        from chatbot.tools.sig_query import get_sample_data
+        return get_sample_data(function_args.get('table'), function_args.get('limit', 5))
+    elif function_name == 'execute_sql_tool':
+        from chatbot.tools.sig_query import execute_sql
+        return execute_sql(function_args.get('sql'), function_args.get('limit', 100))
+
     else:
         return {'error': f'Unknown function: {function_name}'}

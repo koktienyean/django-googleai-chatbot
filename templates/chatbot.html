@@ -1339,8 +1339,84 @@
         }
       }
 
+      // Build debug trace panel if developer mode
+      let debugPanel = '';
+      if (data.debug_trace && data.debug_trace.length > 0) {
+        const traceId = 'trace-' + Date.now();
+        let stepsHtml = '';
+        data.debug_trace.forEach((step, i) => {
+          const isLast = i === data.debug_trace.length - 1;
+          let icon = '📤';
+          let borderColor = 'rgba(0,217,255,0.3)';
+          if (step.step === 'tool_call') { icon = '🔧'; borderColor = 'rgba(255,165,0,0.4)'; }
+          else if (step.step === 'response') { icon = '✅'; borderColor = 'rgba(6,214,160,0.4)'; }
+          else if (step.step === 'error') { icon = '❌'; borderColor = 'rgba(255,0,110,0.4)'; }
+
+          let tokenLine = '';
+          if (step.tokens) {
+            tokenLine = `<div style="margin-top:4px;font-size:9px;color:#666;">
+              IN: <b style="color:#00d9ff">${(step.tokens.input||0).toLocaleString()}</b>
+              OUT: <b style="color:#06d6a0">${(step.tokens.output||0).toLocaleString()}</b>
+            </div>`;
+          }
+
+          const stepId = traceId + '-step-' + i;
+          stepsHtml += `
+            <div style="
+              padding: 6px 10px; margin-bottom: 4px;
+              border-left: 3px solid ${borderColor};
+              background: rgba(255,255,255,0.02);
+              border-radius: 0 4px 4px 0;
+              ${isLast ? 'border-bottom: 2px solid rgba(6,214,160,0.3);' : ''}
+            ">
+              <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="
+                var el=document.getElementById('${stepId}');
+                el.style.display = el.style.display==='none'?'block':'none';
+              ">
+                <span>${icon}</span>
+                <span style="font-weight:600;color:#ccc;font-size:11px;">${escapeHtml(step.label)}</span>
+              </div>
+              <div id="${stepId}" style="display:none;margin-top:6px;">
+                <pre style="
+                  margin:0; padding:6px 8px;
+                  background:rgba(0,0,0,0.3); border-radius:4px;
+                  font-size:10px; color:#a0a0a0;
+                  white-space:pre-wrap; word-break:break-all;
+                  max-height:200px; overflow-y:auto;
+                ">${escapeHtml(JSON.stringify(step.data, null, 2))}</pre>
+              </div>
+              ${tokenLine}
+            </div>
+          `;
+        });
+
+        debugPanel = `
+          <div style="
+            margin-top: 10px; padding: 8px 12px;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid rgba(0,217,255,0.15);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+          ">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;" onclick="
+              var el=document.getElementById('${traceId}');
+              el.style.display = el.style.display==='none'?'block':'none';
+              this.querySelector('.trace-arrow').textContent = el.style.display==='none'?'▶':'▼';
+            ">
+              <span class="trace-arrow" style="font-size:9px;color:#666;">▶</span>
+              <span style="color:#00d9ff;font-weight:700;">🔍 Agent Trace</span>
+              <span style="color:#666;">(${data.debug_trace.length} steps)</span>
+            </div>
+            <div id="${traceId}" style="display:none;">
+              ${stepsHtml}
+            </div>
+          </div>
+        `;
+      }
+
       // Replace loading message with actual response
-      loadingMsg.innerHTML = `<div class="message-content">${processedResponse}${tokenBadge}</div>`;
+      loadingMsg.innerHTML = `<div class="message-content">${processedResponse}${tokenBadge}${debugPanel}</div>`;
       loadSessions();
     } catch (error) {
       loadingMsg.innerHTML = `<div class="message-content">Error: ${error.message}</div>`;
